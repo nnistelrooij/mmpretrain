@@ -33,11 +33,13 @@ class CSRAMultiTaskHead(CSRAClsHead):
     def __init__(
         self,
         tasks: List[str],
+        loss_weights: List[float],
         *args,
         **kwargs,
     ):
         super().__init__(num_classes=len(tasks), *args, **kwargs)
 
+        self.loss_weights = loss_weights
         self.tasks = tasks
 
     def pre_logits(self, feats: Tuple[torch.Tensor]) -> torch.Tensor:
@@ -68,7 +70,7 @@ class CSRAMultiTaskHead(CSRAClsHead):
     ):
         """Unpack data samples and compute loss."""
         losses = {}
-        for task in self.tasks:
+        for task, loss_weight in zip(self.tasks, self.loss_weights):
             task_score = cls_score[task]            
             task_score = torch.stack((-task_score, task_score), dim=1)
 
@@ -77,7 +79,7 @@ class CSRAMultiTaskHead(CSRAClsHead):
 
             task_losses = super()._get_loss(task_score, data_samples, **kwargs)
             for loss, value in task_losses.items():
-                losses[f'{task}_{loss}'] = value
+                losses[f'{task}_{loss}'] = loss_weight * value
                 
         return losses
     

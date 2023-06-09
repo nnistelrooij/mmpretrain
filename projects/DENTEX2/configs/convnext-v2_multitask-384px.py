@@ -1,5 +1,5 @@
-_base_ = f'../../../configs/convnext_v2/convnext-v2-large_32xb32_in1k.py'
-arch = 'large'
+_base_ = '../../../configs/convnext_v2/convnext-v2-base_32xb32_in1k-384px.py'
+
 
 custom_imports = dict(
     imports=[
@@ -103,19 +103,6 @@ test_dataloader = dict(
     ),
 )
 
-# auto_scale_lr = dict(enable=True)
-if arch == 'large':
-    load_from = 'checkpoints/convnext-v2-large_fcmae-in21k-pre_3rdparty_in1k_20230104-d9c4dc0c.pth'
-    in_channels = 1536
-elif arch == 'base':
-    load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k_20230104-c48d16a5.pth'
-    in_channels = 1024
-elif arch == 'tiny':
-# load_from = 'work_dirs/opg_crops_fold_diagnosis_0_multilabel/epoch_13.pth'
-    load_from = 'checkpoints/convnext-v2-tiny_fcmae-in21k-pre_3rdparty_in1k_20230104-8cc8b8f2.pth'
-    in_channels = 768
-
-
 data_preprocessor = dict(num_classes=len(attributes) - 1)
 model = dict(
     backbone=dict(gap_before_final_norm=False),
@@ -124,8 +111,8 @@ model = dict(
         type='CSRAMultiTaskHead',
         tasks=attributes[1:],
         loss=dict(type='CrossEntropyLoss'),
-        loss_weights=[0.5, 1.0, 0.5, 1.0],
-        in_channels=in_channels,
+        loss_weights=[1.0, 1.0, 1.0, 1.0],
+        in_channels=1024,
         num_heads=6,
         lam=0.1,
     ),
@@ -147,7 +134,9 @@ model = dict(
     # ),
     train_cfg=None,
 )
-
+# auto_scale_lr = dict(enable=True)
+load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k-384px_20230104-379425cc.pth'
+# load_from = 'work_dirs/opg_crops_fold_diagnosis_0_multilabel/epoch_13.pth'
 
 val_evaluator = dict(
     _delete_=True,
@@ -185,10 +174,6 @@ visualizer = dict(
         dict(type='LocalVisBackend'),
         dict(type='TensorboardVisBackend'),
     ],
-)
-
-optim_wrapper = dict(
-    clip_grad=dict(_delete_=True, max_norm=35, norm_type=2),
 )
 
 param_scheduler = [

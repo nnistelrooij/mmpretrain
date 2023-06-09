@@ -4,9 +4,21 @@ import cv2
 import numpy as np
 from pycocotools.coco import COCO
 import pycocotools.mask as maskUtils
+from tqdm import tqdm
 
 from mmpretrain.datasets import CustomDataset
 from mmpretrain.registry import DATASETS
+
+
+def compute_iou(poly1, poly2, h, w):
+    rles1 = maskUtils.frPyObjects(
+        poly1['segmentation'], h, w,
+    ) if 'size' not in poly1['segmentation'] else [poly1['segmentation']]
+    rles2 = maskUtils.frPyObjects(
+        poly2['segmentation'], h, w,
+    ) if 'size' not in poly2['segmentation'] else [poly2['segmentation']]
+
+    return maskUtils.iou(rles1, rles2, [0])
 
 
 @DATASETS.register_module()
@@ -15,9 +27,13 @@ class ToothCropDataset(CustomDataset):
     def __init__(
         self,
         extend: float,
+        pred_file: str,
+        iou_thr: float=0.25,
         *args, **kwargs,
     ):
         self.extend = extend
+        self.pred_file = pred_file
+        self.iou_thr = iou_thr
 
         super().__init__(*args, **kwargs)
 
@@ -25,12 +41,17 @@ class ToothCropDataset(CustomDataset):
         height, width, _ = img.shape
 
         # translate bbox to xyxy
+        rle = poly['segmentation']
+        if 'size' not in rle:
+            rle = maskUtils.frPyObjects(rle, height, width)
+        bbox = maskUtils.toBbox(rle)
         bbox = [
             poly['bbox'][0],
             poly['bbox'][1],
             poly['bbox'][0] + poly['bbox'][2],
             poly['bbox'][1] + poly['bbox'][3],
         ]
+
         # extend bbox to incorporate context
         bbox = [
             max(bbox[0] - self.extend * width, 0),
@@ -38,6 +59,7 @@ class ToothCropDataset(CustomDataset):
             min(width - 1, bbox[2] + self.extend * width),
             min(height - 1, bbox[3] + self.extend * height),
         ]
+
         # determine slices to crop imge
         slices = (
             slice(int(bbox[1]), int(bbox[3]) + 1),
@@ -45,9 +67,7 @@ class ToothCropDataset(CustomDataset):
         )
 
         # determine binary mask of object in image
-        rles = maskUtils.frPyObjects(poly['segmentation'], height, width)
-
-        mask = maskUtils.decode(rles).astype(bool)
+        mask = maskUtils.decode([rle]).astype(bool)
         mask = np.repeat(mask, 3, axis=-1).astype(bool)
         mask[..., :2] = 0
 
@@ -64,24 +84,41 @@ class ToothCropDataset(CustomDataset):
 
         cv2.imwrite(str(label_path / f'{img_path.stem}_{fdi_label}.png'), img_crop)
 
-    def crop_tooth_diagnosis(self, coco: COCO):
-        ann_img_stems = [Path(img_dict['file_name']).stem for _, img_dict in coco.imgs.items()]
+    def crop_tooth_diagnosis(
+        self,
+        gt_coco: COCO,
+        pred_coco: COCO,
+    ):
+        ann_img_stems = [Path(img_dict['file_name']).stem for _, img_dict in gt_coco.imgs.items()]
         saved_img_stems = [f.stem.split('_')[0] for f in Path(self.img_prefix).glob('*/*.png')]
 
         if all(stem in saved_img_stems for stem in ann_img_stems):
             return
         
-        for img_id, img_dict in coco.imgs.items():
+        for img_id, img_dict in tqdm(gt_coco.imgs.items(), total=len(gt_coco.imgs)):
             img_path = Path(self.img_prefix) / img_dict['file_name']
             img = cv2.imread(str(img_path))
 
-            for poly in coco.imgToAnns[img_id]:
-                cat_name = coco.cats[poly['category_id']]['name']
-                if cat_name not in self.metainfo['classes']:
+            preds = pred_coco.imgToAnns[img_id]
+            if not preds:
+                continue
+
+            for poly in gt_coco.imgToAnns[img_id]:
+                ious = np.zeros(len(preds))
+                for i, pred_poly in enumerate(preds):
+                    iou = compute_iou(
+                        pred_poly, poly, img_dict['height'], img_dict['width'],
+                    )
+                    ious[i] = iou
+
+                pred_poly, iou = preds[ious.argmax()], ious.max()
+
+                if iou < self.iou_thr:
                     continue
 
+                poly['segmentation'] = pred_poly['segmentation']
+                fdi_label = gt_coco.cats[poly['category_id']]['name']
                 img_crop = self.crop_tooth(img, poly)
-                fdi_label = coco.cats[poly['category_id']]['name']
 
                 if (
                     'extra' not in poly or
@@ -129,8 +166,10 @@ class ToothCropDataset(CustomDataset):
         return data_list
 
     def load_data_list(self):
-        coco = COCO(self.ann_file)
-        # self.crop_tooth_diagnosis(coco)
-        data_list = self.load_annotations(coco)
+        gt_coco = COCO(self.ann_file)
+        pred_coco = COCO(self.pred_file)
+
+        # self.crop_tooth_diagnosis(gt_coco, pred_coco)
+        data_list = self.load_annotations(gt_coco)
             
         return data_list
