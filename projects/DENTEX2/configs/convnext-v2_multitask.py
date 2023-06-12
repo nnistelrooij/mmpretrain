@@ -1,5 +1,5 @@
-_base_ = f'../../../configs/convnext_v2/convnext-v2-large_32xb32_in1k.py'
-arch = 'large'
+_base_ = f'../../../configs/convnext_v2/convnext-v2-base_32xb32_in1k.py'
+arch = 'base'
 
 custom_imports = dict(
     imports=[
@@ -34,6 +34,8 @@ attributes = [
 ]
 # classes = attributes
 
+supervise_number = True
+
 woll = dict(type='PackMultiTaskInputs', multi_task_fields=('gt_label',))
 train_pipeline = [
     dict(type='LoadImageFromFile'),
@@ -47,6 +49,7 @@ train_pipeline = [
     dict(type='RandomFlip', prob=0.5, direction='horizontal'),
     woll,
 ]
+# train_pipeline = _base_.train_dataloader.dataset.pipeline[:-1] + [woll]
 train_dataloader = dict(    
     sampler=dict(_delete_=True, type='ClassAwareSampler'),
     dataset=dict(
@@ -57,6 +60,7 @@ train_dataloader = dict(
         ann_file=ann_prefix + f'train{fold}.json',
         metainfo=dict(classes=classes, attributes=attributes),
         extend=0.1,
+        supervise_number=supervise_number,
         pipeline=train_pipeline
     ),
 )
@@ -72,7 +76,8 @@ train_dataloader = dict(dataset=dict(
         ann_file=ann_prefix + f'train{fold}.json',
         metainfo=dict(classes=classes, attributes=attributes),
         extend=0.1,
-        pipeline=train_pipeline
+        supervise_number=supervise_number,
+        pipeline=train_pipeline,
     ),
 ))
 
@@ -85,6 +90,7 @@ val_dataloader = dict(dataset=dict(
     ann_file=ann_prefix + f'val{fold}.json',
     metainfo=dict(classes=classes, attributes=attributes),
     extend=0.1,
+    supervise_number=supervise_number,
     pipeline=val_pipeline,
 ))
 
@@ -96,8 +102,9 @@ test_dataloader = dict(
         data_root=data_root,
         data_prefix=data_prefix,
         pred_file='full_pred.json',
-        ann_file=ann_prefix + f'val{fold}.json',
+        ann_file=ann_prefix + f'train{fold}.json',
         metainfo=dict(classes=classes, attributes=attributes),
+        supervise_number=supervise_number,
         extend=0.1,
         pipeline=test_pipeline,
     ),
@@ -108,7 +115,7 @@ if arch == 'large':
     load_from = 'checkpoints/convnext-v2-large_fcmae-in21k-pre_3rdparty_in1k_20230104-d9c4dc0c.pth'
     in_channels = 1536
 elif arch == 'base':
-    load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k_20230104-c48d16a5.pth'
+    # load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k_20230104-c48d16a5.pth'
     in_channels = 1024
 elif arch == 'tiny':
 # load_from = 'work_dirs/opg_crops_fold_diagnosis_0_multilabel/epoch_13.pth'
@@ -122,9 +129,12 @@ model = dict(
     head=dict(
         _delete_=True,
         type='CSRAMultiTaskHead',
-        tasks=attributes[1:],
+        task_classes={
+            **{a: 1 for a in attributes[1:]},
+            **({'Number': 8} if supervise_number else {}),
+        },
         loss=dict(type='CrossEntropyLoss'),
-        loss_weights=[0.5, 1.0, 0.5, 1.0],
+        loss_weights=[0.5, 1.0, 0.5, 1.0] + ([1.0] if supervise_number else []),
         in_channels=in_channels,
         num_heads=6,
         lam=0.1,
@@ -153,22 +163,30 @@ val_evaluator = dict(
     _delete_=True,
     type='MultiTasksAggregateMetric',
     task_metrics={
-        attr: [
+        **{attr: [
             dict(type='SingleLabelMetric', num_classes=2),
             dict(type='SingleLabelMetric', num_classes=2, average=None),
         ]
-        for attr in attributes[1:]
+        for attr in attributes[1:]},
+        **({'Number': [
+            dict(type='SingleLabelMetric', num_classes=8),
+            dict(type='SingleLabelMetric', num_classes=8, average=None),
+        ]} if supervise_number else {}),
     }
 )
 test_evaluator = dict(
     _delete_=True,
     type='MultiTasksAggregateMetric',
     task_metrics={
-        attr: [
-            dict(type='SingleLabelMetric'),
-            dict(type='SingleLabelMetric', average=None),
+        **{attr: [
+            dict(type='SingleLabelMetric', num_classes=2),
+            dict(type='SingleLabelMetric', num_classes=2, average=None),
         ]
-        for attr in attributes[1:]
+        for attr in attributes[1:]},
+        **({'Number': [
+            dict(type='SingleLabelMetric', num_classes=8),
+            dict(type='SingleLabelMetric', num_classes=8, average=None),
+        ]} if supervise_number else {}),
     }
 )
 
@@ -196,10 +214,10 @@ param_scheduler = [
         type='LinearLR',
         start_factor=0.001,
         by_epoch=True,
-        end=5,
+        end=10,
         convert_to_iter_based=True),
-    dict(type='CosineAnnealingLR', eta_min=1e-05, by_epoch=True, begin=5)
+    dict(type='CosineAnnealingLR', eta_min=1e-05, by_epoch=True, begin=10)
 ]
-train_cfg = dict(by_epoch=True, max_epochs=50, val_interval=1)
+train_cfg = dict(by_epoch=True, max_epochs=100, val_interval=1)
 
-work_dir = f'work_dirs/opg_crops_fold{fold}_multitask'
+work_dir = f'work_dirs/opg_crops_fold{fold}'

@@ -47,7 +47,7 @@ class MultilabelMLP(nn.Module):
         logits = torch.column_stack(logits)
         
         pred = self.MLP(logits)
-        pred = logits[:, 1::2]
-        pred.requires_grad_(True)
+        # pred = logits[:, 1::2]
+        # pred.requires_grad_(True)
 
         return (pred,)

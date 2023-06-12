@@ -1,1 +1,1 @@
-from projects.DENTEX.mlp.mlp import MultilabelMLP
+from projects.DENTEX2.mlp.mlp import MultilabelMLP

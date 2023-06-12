@@ -32,15 +32,15 @@ class CSRAMultiTaskHead(CSRAClsHead):
 
     def __init__(
         self,
-        tasks: List[str],
+        task_classes: Dict[str, int],
         loss_weights: List[float],
         *args,
         **kwargs,
     ):
-        super().__init__(num_classes=len(tasks), *args, **kwargs)
+        super().__init__(num_classes=sum(task_classes.values()), *args, **kwargs)
 
+        self.task_classes = task_classes
         self.loss_weights = loss_weights
-        self.tasks = tasks
 
     def pre_logits(self, feats: Tuple[torch.Tensor]) -> torch.Tensor:
         """The process before the final classification head.
@@ -57,8 +57,9 @@ class CSRAMultiTaskHead(CSRAClsHead):
         """The forward process."""
         pre_logits = self.pre_logits(feats)
         logit = sum([head(pre_logits) for head in self.csra_heads])
+        logits = logit.split(tuple(self.task_classes.values()), dim=1)
 
-        task_logits = {task: logit for task, logit in zip(self.tasks, logit.T)}
+        task_logits = {task: logit for task, logit in zip(self.task_classes, logits)}
 
         return task_logits
 
@@ -70,9 +71,10 @@ class CSRAMultiTaskHead(CSRAClsHead):
     ):
         """Unpack data samples and compute loss."""
         losses = {}
-        for task, loss_weight in zip(self.tasks, self.loss_weights):
+        for task, loss_weight in zip(self.task_classes, self.loss_weights):
             task_score = cls_score[task]            
-            task_score = torch.stack((-task_score, task_score), dim=1)
+            if task_score.shape[1] == 1:
+                task_score = torch.cat((-task_score, task_score), dim=1)
 
             for sample in data_samples:
                 sample.gt_label = getattr(sample, task).gt_label
@@ -89,26 +91,24 @@ class CSRAMultiTaskHead(CSRAClsHead):
 
         Including softmax and set ``pred_label`` of data samples.
         """
-        pred_scores = {
-            task: torch.sigmoid(score)
-            for task, score in cls_score.items()
-        }
-        pred_scores = {
-            task: torch.stack((1 - score, score), dim=1)
-            for task, score in pred_scores.items()
-        }
+        for task, scores in cls_score.items():
+            if scores.shape[1] == 1:
+                scores = torch.sigmoid(scores)
+                scores = torch.cat((1 - scores, scores), dim=1)
+            else:
+                scores = torch.softmax(scores, dim=1)
 
-        for task, scores in pred_scores.items():
-            for data_sample, score in zip(data_samples, scores):
+            
+            for data_sample, scores in zip(data_samples, scores):
                 if self.thr is not None:
                     # a label is predicted positive if larger than thr
-                    label = torch.where(score > self.thr)[0]
+                    label = torch.where(scores > self.thr)[0]
                 else:
                     # top-k labels will be predicted positive for any example
-                    _, label = score.topk(self.topk)
+                    _, label = scores.topk(self.topk)
 
                 getattr(data_sample, task)\
-                    .set_pred_score(score)\
+                    .set_pred_score(scores)\
                     .set_pred_label(label)\
                     .set_field(
                         task in data_sample.tasks,

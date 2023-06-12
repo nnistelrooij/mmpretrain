@@ -3,8 +3,8 @@ _base_ = ['./mlp.py']
 
 custom_imports = dict(
     imports=[
-        'projects.DENTEX.datasets',
-        'projects.DENTEX.mlp',
+        'projects.DENTEX2.datasets',
+        'projects.DENTEX2.mlp',
     ],
     allow_failed_imports=False,
 )

@@ -68,12 +68,13 @@ class ToothCropDataset(CustomDataset):
 
         # determine binary mask of object in image
         mask = maskUtils.decode([rle]).astype(bool)
-        mask = np.repeat(mask, 3, axis=-1).astype(bool)
-        mask[..., :2] = 0
 
-        # crop image and mask according to extended bbox
-        img = img.copy()
-        img[mask] = 255
+        # add mask as last channel and crop according to extended bbox
+        img = np.dstack((
+            img[..., 0],
+            img[..., 0],
+            255 * mask,
+        ))
         img_crop = img[slices]
 
         return img_crop
@@ -117,7 +118,7 @@ class ToothCropDataset(CustomDataset):
                     continue
 
                 poly['segmentation'] = pred_poly['segmentation']
-                fdi_label = gt_coco.cats[poly['category_id']]['name']
+                fdi_label = pred_coco.cats[pred_poly['category_id']]['name']
                 img_crop = self.crop_tooth(img, poly)
 
                 if (
@@ -144,7 +145,7 @@ class ToothCropDataset(CustomDataset):
             img_files = sorted(label_path.glob('*'))
             img_files = [img_files[idx] for idx in rng.permutation(len(img_files))]
 
-            gt_label = self.metainfo['attributes'].index(label)
+            gt_label = min(1, self.metainfo['attributes'].index(label))
             i = 0
             for f in img_files:
                 if balance and i == num_images:
@@ -169,7 +170,7 @@ class ToothCropDataset(CustomDataset):
         gt_coco = COCO(self.ann_file)
         pred_coco = COCO(self.pred_file)
 
-        # self.crop_tooth_diagnosis(gt_coco, pred_coco)
+        self.crop_tooth_diagnosis(gt_coco, pred_coco)
         data_list = self.load_annotations(gt_coco)
             
         return data_list

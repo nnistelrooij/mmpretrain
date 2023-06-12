@@ -27,6 +27,9 @@ class MultiTasksAggregateMetric(MultiTasksMetric):
         aggregate_metrics = {}
         for metric, value in metrics.items():
             _, metric = metric.split('_', 1)
+            if 'classwise' in metric:
+                continue
+
             aggregate_metrics.setdefault(metric, []).append(value)
         
         for metric, values in aggregate_metrics.items():

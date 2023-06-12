@@ -14,10 +14,12 @@ class ToothCropMultitaskDataset(ToothCropDataset):
     def __init__(
         self,
         metainfo,
+        supervise_number: bool,
         *args,
         **kwargs,
     ):
         self.METAINFO['tasks'] = metainfo['attributes'][1:]
+        self.supervise_number = supervise_number
 
         super().__init__(metainfo=metainfo, *args, **kwargs)
 
@@ -60,10 +62,19 @@ class ToothCropMultitaskDataset(ToothCropDataset):
 
             data_list.append(file_dict)
 
+        if not self.supervise_number:
+            return data_list
+        
+        for data_sample in data_list:
+            number = Path(data_sample['img_path']).stem.split('_')[1][1]
+            number_label = int(number) - 1
+            data_sample['gt_label']['Number'] = number_label
+        
         return data_list
     
     def get_cat_ids(self, idx: int) -> List[int]:
-        multilabel = list(self.get_data_info(idx)['gt_label'].values())
+        labels = self.get_data_info(idx)['gt_label']
+        multilabel = [label for task, label in labels.items() if task in self.metainfo['attributes']]
 
         combi_idx = sum((2 ** i) * label for i, label in enumerate(multilabel))
         
