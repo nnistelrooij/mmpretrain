@@ -5,7 +5,7 @@ custom_imports = dict(
     imports=[
         'projects.DENTEX2.datasets',
         'projects.DENTEX2.datasets.samplers.class_aware_sampler',
-        'projects.DENTEX2.datasets.transforms.processing',
+        'projects.DENTEX2.datasets.transforms',
         'projects.DENTEX2.hooks.class_counts_hook',
     ],
     allow_failed_imports=False,
@@ -33,34 +33,39 @@ attributes = [
 ]
 # classes = attributes
 
-train_dataloader = dict(dataset=dict(
-    _delete_=True,
-    type='ClassBalancedDataset',
-    oversample_thr=0.1,
-    dataset=dict(
-        type='ToothCropDataset',
-        data_root=data_root,
-        data_prefix=data_prefix,
-        ann_file=ann_prefix + f'train{fold}.json',
-        pred_file='full_pred.json',
-        metainfo=dict(classes=classes, attributes=attributes),
-        extend=0.1,
-        pipeline=[
-            dict(type='LoadImageFromFile'),
-            dict(
-                type='ResizeEdge',
-                scale=256,
-                edge='short',
-                backend='pillow',
-                interpolation='bicubic'),
-            dict(type='CenterCrop', crop_size=224),
-            dict(type='RandomFlip', prob=0.5, direction='horizontal'),
-            dict(type='PackInputs')
-        ],
-    )
-))
-
 train_dataloader = dict(
+    batch_size=64,
+    dataset=dict(
+        _delete_=True,
+        type='ClassBalancedDataset',
+        oversample_thr=0.1,
+        dataset=dict(
+            type='ToothCropDataset',
+            data_root=data_root,
+            data_prefix=data_prefix,
+            ann_file=ann_prefix + f'train{fold}.json',
+            pred_file='full_pred.json',
+            metainfo=dict(classes=classes, attributes=attributes),
+            extend=0.1,
+            pipeline=[
+                dict(type='LoadImageFromFile'),
+                dict(
+                    type='ResizeEdge',
+                    scale=256,
+                    edge='short',
+                    backend='pillow',
+                    interpolation='bicubic'),
+                dict(type='CenterCrop', crop_size=224),
+                dict(type='RandomFlip', prob=0.5, direction='horizontal'),
+                dict(type='PackInputs')
+            ],
+        ),
+    ),
+)
+
+batch_size = 128
+train_dataloader = dict(
+    batch_size=batch_size,
     sampler=dict(_delete_=True, type='ClassAwareSampler'),
     dataset=dict(
         _delete_=True,
@@ -77,6 +82,9 @@ train_dataloader = dict(
                 type='RandomResizedClassPreservingCrop',
                 scale=224,
             ),
+            # dict(type='SeparateOPGMask'),
+            dict(type='NNUNetSpatialIntensityAugmentations'),
+            # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
             # dict(
             #     type='ResizeEdge',
             #     scale=256,
@@ -127,7 +135,23 @@ elif _base_.model.backbone.arch == 'tiny':
 else:
     load_from = 'checkpoints/efficientnetv2-s_in21k-pre-3rdparty_in1k_20221220-7a7c8475.pth'
 
-optim_wrapper = dict(optimizer=dict(lr=0.001))
+optim_wrapper = dict(
+    optimizer=dict(lr=0.001, weight_decay=0.001),
+    # clip_grad=dict(_delete_=True, max_norm=12.0),
+)
+
+param_scheduler = [
+    # warm up learning rate scheduler
+    dict(
+        type='LinearLR',
+        start_factor=1e-3,
+        by_epoch=True,
+        end=5 * (batch_size // 32),
+        # update by iter
+        convert_to_iter_based=True),
+    # main learning rate scheduler
+    dict(type='CosineAnnealingLR', eta_min=1e-5, by_epoch=True, begin=5 * (batch_size // 32))
+]
 
 val_evaluator = [
     dict(type='SingleLabelMetric', average=None),
@@ -141,7 +165,10 @@ test_evaluator = [
 ]
 
 train_cfg = dict(max_epochs=100)
-custom_hooks = [dict(type='ClassCountsHook', num_classes=2)]
+custom_hooks = [
+    dict(type='ClassCountsHook', num_classes=2),
+    # dict(type='EMAHook', momentum=4e-5, priority='ABOVE_NORMAL'),
+]
 
 default_hooks = dict(
     checkpoint=dict(

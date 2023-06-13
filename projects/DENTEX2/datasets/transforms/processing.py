@@ -1,8 +1,16 @@
 import math
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
-import numpy as np
+from batchgenerators.transforms.abstract_transforms import Compose
+from batchgenerators.transforms.color_transforms import BrightnessMultiplicativeTransform, ContrastAugmentationTransform, BrightnessTransform
+from batchgenerators.transforms.color_transforms import GammaTransform
+from batchgenerators.transforms.noise_transforms import GaussianNoiseTransform, GaussianBlurTransform
+from batchgenerators.transforms.resample_transforms import SimulateLowResolutionTransform
+from batchgenerators.transforms.spatial_transforms import SpatialTransform
+from mmcv.transforms import BaseTransform
 from mmcv.transforms.utils import cache_randomness
+import numpy as np
+from scipy import ndimage
 
 from mmpretrain.registry import TRANSFORMS
 from mmpretrain.datasets.transforms import RandomResizedCrop
@@ -25,8 +33,6 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
         h, w = img.shape[:2]
         area = h * w
 
-        mask_area = np.sum(img[..., 2] > 0)
-
         for _ in range(self.max_attempts):
             target_area = np.random.uniform(*self.crop_ratio_range) * area
             log_ratio = (math.log(self.aspect_ratio_range[0]),
@@ -48,9 +54,12 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
                 slice(offset_h, offset_h + target_h),
                 slice(offset_w, offset_w + target_w),
             )
-            crop_mask_area = np.sum(img[slices][..., 2] > 0)
-
-            if mask_area != crop_mask_area:
+            tooth_slices = ndimage.find_objects(img[slices][..., 2] > 0)
+            if (
+                not tooth_slices or
+                any([t_slc.start == 0 for t_slc in tooth_slices[0]]) or
+                any([t_slc.stop == (slc.stop - slc.start) for slc, t_slc in zip(slices, tooth_slices[0])])
+            ):
                 continue
             
             return offset_h, offset_w, target_h, target_w
@@ -69,3 +78,164 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
         offset_h = (h - target_h) // 2
         offset_w = (w - target_w) // 2
         return offset_h, offset_w, target_h, target_w
+ 
+
+@TRANSFORMS.register_module()
+class NNUNetSpatialIntensityAugmentations(BaseTransform):
+
+    def __init__(
+        self,
+        params: Dict[str, Any]={
+            "do_elastic": False,
+            "elastic_deform_alpha": (0., 900.),
+            "elastic_deform_sigma": (9., 13.),
+            "p_eldef": 0.2,
+            "do_scaling": True,
+            "scale_range": (0.7, 1.4),
+            "independent_scale_factor_for_each_axis": False,
+            "p_scale": 0.2,
+            "do_rotation": True,
+            "rotation_x": (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi),
+            "rotation_y": (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi),
+            "rotation_z": (-30. / 360 * 2. * np.pi, 30. / 360 * 2. * np.pi),
+            "rotation_p_per_axis": 1,
+            "p_rot": 0.2,
+            "random_crop": False,
+            "random_crop_dist_to_border": None,
+            "do_gamma": True,
+            "gamma_retain_stats": True,
+            "gamma_range": (0.7, 1.5),
+            "p_gamma": 0.3,
+            "do_mirror": True,
+            "mirror_axes": (0, 1),
+            "border_mode_data": "constant",
+            "do_additive_brightness": False,
+            "additive_brightness_p_per_sample": 0.15,
+            "additive_brightness_p_per_channel": 0.5,
+            "additive_brightness_mu": 0.0,
+            "additive_brightness_sigma": 0.1,
+        },
+        patch_size=None,
+        border_val_seg=-1,
+        order_seg=1,
+        order_data=3,
+        disable=False,
+        max_attempts=5,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+
+        # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+        # initialize list for train-time transforms
+        tr_transforms = []
+        # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+        if not disable:
+            # morphological spatial transforms
+            tr_transforms.append(SpatialTransform(
+                patch_size,
+                patch_center_dist_from_border=None,
+                do_elastic_deform=params.get("do_elastic"),
+                alpha=params.get("elastic_deform_alpha"),
+                sigma=params.get("elastic_deform_sigma"),
+                do_rotation=params.get("do_rotation"),
+                angle_x=params.get("rotation_x"),
+                angle_y=params.get("rotation_y"),
+                angle_z=params.get("rotation_z"),
+                p_rot_per_axis=params.get("rotation_p_per_axis"),
+                do_scale=params.get("do_scaling"),
+                scale=params.get("scale_range"),
+                border_mode_data=params.get("border_mode_data"),
+                border_cval_data=0,
+                order_data=order_data,
+                border_mode_seg="constant",
+                border_cval_seg=border_val_seg,
+                order_seg=order_seg,
+                random_crop=params.get("random_crop"),
+                p_el_per_sample=params.get("p_eldef"),
+                p_scale_per_sample=params.get("p_scale"),
+                p_rot_per_sample=params.get("p_rot"),
+                independent_scale_for_each_axis=params.get("independent_scale_factor_for_each_axis"),
+            ))
+            # -------------------------------------------------------------------------------------------------------------------------------------------------------------
+            # intensity transforms
+            tr_transforms.append(GaussianNoiseTransform(p_per_sample=0.1))
+            tr_transforms.append(GaussianBlurTransform((0.5, 1.), different_sigma_per_channel=True, p_per_sample=0.2, p_per_channel=0.5))
+            tr_transforms.append(BrightnessMultiplicativeTransform(multiplier_range=(0.75, 1.25), p_per_sample=0.15))
+
+            if params.get("do_additive_brightness"):
+                tr_transforms.append(BrightnessTransform(
+                    params.get("additive_brightness_mu"),
+                    params.get("additive_brightness_sigma"), True,
+                    p_per_sample=params.get("additive_brightness_p_per_sample"),
+                    p_per_channel=params.get("additive_brightness_p_per_channel"),
+                ))
+
+            tr_transforms.append(ContrastAugmentationTransform(p_per_sample=0.15))
+            tr_transforms.append(SimulateLowResolutionTransform(
+                zoom_range=(0.5, 1), per_channel=True, p_per_channel=0.5,
+                order_downsample=0,  order_upsample=3, p_per_sample=0.25,
+                ignore_axes=None,
+            ))
+            tr_transforms.append(GammaTransform(
+                params.get("gamma_range"), True, True,
+                retain_stats=params.get("gamma_retain_stats"),
+                p_per_sample=0.1,
+            ))  # inverted gamma
+
+            if params.get("do_gamma"):
+                tr_transforms.append(GammaTransform(
+                    params.get("gamma_range"), False, True,
+                    retain_stats=params.get("gamma_retain_stats"),
+                    p_per_sample=params["p_gamma"],
+                ))
+        # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+        self.transforms = Compose(tr_transforms)
+        # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        self.max_attempts = max_attempts
+
+    def transform(self, results: dict) -> dict:
+        for _ in range(self.max_attempts):
+            img = results['img'].copy()
+
+            results['data'] = img[None, None, ..., 0]
+            results['seg'] = img[None, None, ..., 2] // 255
+            results = self.transforms(**results)
+            data = results.pop('data')
+            seg = results.pop('seg').astype(int)
+
+            # return result without transformation if tooth mask is outside image
+            slices = ndimage.find_objects(seg[0, 0])
+            if (
+                not slices or
+                any([slc.start == 0 for slc in slices[0]]) or
+                any([slc.stop == dim for slc, dim in zip(slices[0], img.shape)])
+            ):
+                continue
+            
+            # return result with transformation with tooth mask as final channel
+            results['img'] = np.transpose(np.concatenate((
+                np.repeat(data[0, :1], repeats=2, axis=0),
+                255.0 * seg[0, :1]
+            )), axes=(1, 2, 0))
+
+            return results
+
+        if False:
+            import matplotlib.pyplot as plt
+
+            _, axs = plt.subplots(1, 3, figsize=(16, 6))
+            axs[0].imshow(img[..., 0])
+            axs[0].axis('off')
+            axs[1].imshow(results['img'][..., 0])
+            axs[1].axis('off')
+            axs[2].imshow(img[..., 2])
+            axs[2].axis('off')
+
+            plt.tight_layout()
+            plt.show()
+
+        results['img'] = results['img'].astype(float)
+
+        return results

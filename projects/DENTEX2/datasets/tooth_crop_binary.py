@@ -29,11 +29,15 @@ class ToothCropDataset(CustomDataset):
         extend: float,
         pred_file: str,
         iou_thr: float=0.25,
+        segm_channel: bool=True,
+        mask_tooth: bool=False,
         *args, **kwargs,
     ):
         self.extend = extend
         self.pred_file = pred_file
         self.iou_thr = iou_thr
+        self.segm_channel = segm_channel
+        self.mask_tooth = mask_tooth
 
         super().__init__(*args, **kwargs)
 
@@ -69,12 +73,21 @@ class ToothCropDataset(CustomDataset):
         # determine binary mask of object in image
         mask = maskUtils.decode([rle]).astype(bool)
 
+        # add extra channel of tooth segmentation
+        if self.segm_channel:
+            img = np.dstack((
+                img[..., 0],
+                img[..., 0],
+                255 * mask,
+            ))
+
+        # only keep tooth in tooth crop image
+        if self.mask_tooth:
+            mask = mask[..., None] if mask.ndim == 2 else mask
+            mask = np.repeat(mask, 3, axis=2).astype(bool)
+            img[~mask] = 0
+
         # add mask as last channel and crop according to extended bbox
-        img = np.dstack((
-            img[..., 0],
-            img[..., 0],
-            255 * mask,
-        ))
         img_crop = img[slices]
 
         return img_crop
@@ -170,7 +183,7 @@ class ToothCropDataset(CustomDataset):
         gt_coco = COCO(self.ann_file)
         pred_coco = COCO(self.pred_file)
 
-        self.crop_tooth_diagnosis(gt_coco, pred_coco)
+        # self.crop_tooth_diagnosis(gt_coco, pred_coco)
         data_list = self.load_annotations(gt_coco)
             
         return data_list
