@@ -1,5 +1,6 @@
-_base_ = '../../../configs/convnext_v2/convnext-v2-base_32xb32_in1k.py'
-# _base_ = '../../../configs/efficientnet_v2/efficientnetv2-s_8xb32_in1k-384px.py'
+# _base_ = '../../../configs/convnext_v2/convnext-v2-tiny_32xb32_in1k.py'
+# _base_ = '../../../configs/efficientnet_v2/efficientnetv2-s_8xb32_in21k.py'
+_base_ = '../../../configs/swin_transformer_v2/swinv2-tiny-w16_16xb64_in1k-256px.py'
 
 custom_imports = dict(
     imports=[
@@ -7,13 +8,15 @@ custom_imports = dict(
         'projects.DENTEX2.datasets.samplers.class_aware_sampler',
         'projects.DENTEX2.datasets.transforms',
         'projects.DENTEX2.hooks.class_counts_hook',
+        'projects.DENTEX2.evaluation.metrics.positive_label',
     ],
     allow_failed_imports=False,
 )
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'fdi-checkedv2'
-fold = '_diagnosis_4'
+fold = '_diagnosis_0'
+run = 1
 multilabel = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
@@ -55,7 +58,7 @@ train_dataloader = dict(
                     edge='short',
                     backend='pillow',
                     interpolation='bicubic'),
-                dict(type='CenterCrop', crop_size=224),
+                dict(type='CenterCrop', crop_size=256),
                 dict(type='RandomFlip', prob=0.5, direction='horizontal'),
                 dict(type='PackInputs')
             ],
@@ -78,10 +81,7 @@ train_dataloader = dict(
         extend=0.1,
         pipeline=[
             dict(type='LoadImageFromFile'),
-            dict(
-                type='RandomResizedClassPreservingCrop',
-                scale=224,
-            ),
+            dict(type='RandomResizedClassPreservingCrop', scale=256),
             # dict(type='SeparateOPGMask'),
             dict(type='NNUNetSpatialIntensityAugmentations'),
             # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
@@ -120,24 +120,37 @@ test_dataloader = dict(dataset=dict(
 
 data_preprocessor = dict(num_classes=2)
 model = dict(
+    backbone=(
+        dict(pad_small_map=True)
+        if _base_.model.backbone.type == 'SwinTransformerV2' else
+        dict()
+    ),
     head=dict(
         num_classes=2,
-        loss=dict(_delete_=True, type='FocalLoss'),
+        loss=dict(_delete_=True, type='LabelSmoothLoss', label_smooth_val=0.1),
+        # loss=dict(_delete_=True, type='FocalLoss'),
     ),
     train_cfg=None,
 )
 # auto_scale_lr = dict(enable=True)
-if _base_.model.backbone.arch == 'base':
+if _base_.model.backbone.type == 'ConvNeXt' and _base_.model.backbone.arch == 'base':
     load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k_20230104-c48d16a5.pth'
     # load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k-384px_20230104-379425cc.pth'
-elif _base_.model.backbone.arch == 'tiny':
+elif _base_.model.backbone.type == 'ConvNeXt' and _base_.model.backbone.arch == 'tiny':
     load_from = 'checkpoints/convnext-v2-tiny_fcmae-in21k-pre_3rdparty_in1k_20230104-8cc8b8f2.pth'
-else:
+elif _base_.model.backbone.type == 'EfficientNetV2':
     load_from = 'checkpoints/efficientnetv2-s_in21k-pre-3rdparty_in1k_20221220-7a7c8475.pth'
+else:
+    load_from = 'checkpoints/swinv2-tiny-w16_3rdparty_in1k-256px_20220803-9651cdd7.pth'
 
 optim_wrapper = dict(
     optimizer=dict(lr=0.001, weight_decay=0.001),
-    # clip_grad=dict(_delete_=True, max_norm=12.0),
+    clip_grad=(
+        dict(_delete_=True, max_norm=5.0)
+        if _base_.model.backbone.type == 'ConvNeXt' else
+        dict(max_norm=5.0)
+    ),
+    accumulative_counts=128 // batch_size,
 )
 
 param_scheduler = [
@@ -154,13 +167,13 @@ param_scheduler = [
 ]
 
 val_evaluator = [
-    dict(type='SingleLabelMetric', average=None),
-    dict(type='SingleLabelMetric'),
+    dict(type='PositiveLabelMetric', average=None),
+    dict(type='PositiveLabelMetric'),
     dict(type='ConfusionMatrix', num_classes=2),
 ]
 test_evaluator = [
-    dict(type='SingleLabelMetric', average=None),
-    dict(type='SingleLabelMetric'),
+    dict(type='PositiveLabelMetric', average=None),
+    dict(type='PositiveLabelMetric'),
     dict(type='ConfusionMatrix', num_classes=2),
 ]
 
@@ -173,7 +186,7 @@ custom_hooks = [
 default_hooks = dict(
     checkpoint=dict(
         max_keep_ckpts=1,        
-        save_best='single-label/f1-score',
+        save_best='single-label/f1-score_positive',
         rule='greater',
     ),
 )
@@ -182,4 +195,4 @@ visualizer = dict(vis_backends=[
     dict(type='TensorboardVisBackend'),
 ])
 
-work_dir = f'work_dirs/opg_crops_fold{fold}_{attributes[-1]}'
+work_dir = f'work_dirs/opg_crops_fold{fold}_{attributes[-1]}_{run}_swin'

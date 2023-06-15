@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 from mmpretrain.evaluation import MultiTasksMetric
 from mmpretrain.registry import METRICS
@@ -27,13 +28,21 @@ class MultiTasksAggregateMetric(MultiTasksMetric):
         aggregate_metrics = {}
         for metric, value in metrics.items():
             _, metric = metric.split('_', 1)
-            if 'classwise' in metric:
+            if 'classwise' not in metric:
                 continue
 
-            aggregate_metrics.setdefault(metric, []).append(value)
+            aggregate_metrics.setdefault(metric, []).append(value[1])
         
         for metric, values in aggregate_metrics.items():
-            aggregate_metrics[metric] = np.mean(values).item()
+            if isinstance(values[0], float):
+                aggregate_metrics[metric] = np.mean(values).item()
+                continue
+
+            result = torch.zeros_like(values[0])
+            for value in values:
+                result += value
+
+            aggregate_metrics[metric] = result
 
         metrics.update(aggregate_metrics)
 

@@ -3,16 +3,14 @@
 from typing import Dict, List, Tuple
 
 import torch
-import torch.nn as nn
-from mmengine.model import BaseModule, ModuleList
 
 from mmpretrain.registry import MODELS
-from mmpretrain.models.heads.multi_label_csra_head import CSRAClsHead
+from mmpretrain.models.heads import MultiLabelClsHead
 from mmpretrain.structures import DataSample
 
 
 @MODELS.register_module()
-class CSRAMultiTaskHead(CSRAClsHead):
+class ClsMultiTaskHead(MultiLabelClsHead):
     """Class-specific residual attention classifier head.
 
     Please refer to the `Residual Attention: A Simple but Effective Method for
@@ -38,7 +36,7 @@ class CSRAMultiTaskHead(CSRAClsHead):
         *args,
         **kwargs,
     ):
-        super().__init__(num_classes=sum(task_classes.values()), *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.task_classes = task_classes
         self.loss_weights = loss_weights
@@ -57,9 +55,8 @@ class CSRAMultiTaskHead(CSRAClsHead):
 
     def forward(self, feats: Tuple[torch.Tensor]) -> torch.Tensor:
         """The forward process."""
-        pre_logits = self.pre_logits(feats)
-        logit = sum([head(pre_logits) for head in self.csra_heads])
-        logits = logit.split(tuple(self.task_classes.values()), dim=1)
+        logits = self.pre_logits(feats)
+        logits = logits.split(tuple(self.task_classes.values()), dim=1)
 
         task_logits = {task: logit for task, logit in zip(self.task_classes, logits)}
 
@@ -113,18 +110,13 @@ class CSRAMultiTaskHead(CSRAClsHead):
         for task, scores in cls_score.items():
             if scores.shape[1] == 1:
                 scores = torch.sigmoid(scores)
-                scores = torch.cat((1 - scores, scores), dim=1)
+                scores = torch.column_stack((1 - scores, scores))
             else:
                 scores = torch.softmax(scores, dim=1)
 
             
             for data_sample, scores in zip(data_samples, scores):
-                if self.thr is not None:
-                    # a label is predicted positive if larger than thr
-                    label = torch.where(scores > self.thr)[0]
-                else:
-                    # top-k labels will be predicted positive for any example
-                    _, label = scores.topk(self.topk)
+                label = (scores > self.thr).to(int)
 
                 getattr(data_sample, task)\
                     .set_pred_score(scores)\
