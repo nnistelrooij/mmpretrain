@@ -33,6 +33,9 @@ class MultilabelMLP(nn.Module):
     def forward(self, x):
         if not self.full_init:
             for _, classifier in self.binary_classifiers.items():
+                if classifier.init_cfg is None:
+                    continue
+                
                 ckpt = torch.load(classifier.init_cfg['checkpoint'])
                 classifier.load_state_dict(ckpt['state_dict'], strict=False)
 
