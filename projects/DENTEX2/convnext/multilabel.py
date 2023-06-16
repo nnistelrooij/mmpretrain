@@ -7,11 +7,13 @@ from mmpretrain.registry import MODELS
 
 
 @MODELS.register_module()
-class MultilabelMLP(nn.Module):
+class MultilabelConvNeXts(nn.Module):
 
     def __init__(
         self,
         classifiers: Dict[str, Any],
+        pretrained: str,
+
     ):
         super().__init__()
 
@@ -21,12 +23,19 @@ class MultilabelMLP(nn.Module):
             self.binary_classifiers[task] = classifier
 
         self.MLP = nn.Sequential(
-            nn.Linear(2 * len(classifiers), 256),
+            nn.Linear(2 * len(classifiers), 256, bias=False),
             nn.LeakyReLU(),
-            nn.Linear(256, 256),
+            nn.Linear(256, 256, bias=False),
             nn.LeakyReLU(),
             nn.Linear(256, len(classifiers)),
         )
+        # self.MLP = nn.Sequential(
+        #     nn.Linear(2 * len(classifiers), len(classifiers)),
+        # )
+
+        self.pretrained = pretrained
+        multilabel_backbone = list(classifiers.values())[0].backbone
+        self.multilabel_backbone = MODELS.build(multilabel_backbone)
 
         self.full_init = False
 
@@ -39,6 +48,14 @@ class MultilabelMLP(nn.Module):
                 ckpt = torch.load(classifier.init_cfg['checkpoint'])
                 classifier.load_state_dict(ckpt['state_dict'], strict=False)
 
+            state_dict = torch.load(self.pretrained)['state_dict']
+            backbone_dict = {}
+            for key,value in state_dict.items():
+                if 'backbone' in key:
+                    backbone_dict[key.replace('backbone.', '')] = value
+
+            self.multilabel_backbone.load_state_dict(backbone_dict, strict=False)
+
             self.full_init = True
 
         with torch.no_grad():
@@ -49,9 +66,11 @@ class MultilabelMLP(nn.Module):
 
         logits = torch.column_stack(logits)
         
-        pred = self.MLP(logits)
+        binary_logits = self.MLP(logits)
 
-        pred = logits[:, 1::2] - logits[:, ::2]
-        pred.requires_grad_(True)
+        multilabel_feats = self.multilabel_backbone(x)
 
-        return (pred,)
+        # pred = logits[:, 1::2] - logits[:, ::2]
+        # pred.requires_grad_(True)
+
+        return binary_logits, multilabel_feats[0]

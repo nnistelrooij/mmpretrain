@@ -183,7 +183,7 @@ class ToothCropDataset(CustomDataset):
         gt_coco = COCO(self.ann_file)
         pred_coco = COCO(self.pred_file)
 
-        self.crop_tooth_diagnosis(gt_coco, pred_coco)
+        # self.crop_tooth_diagnosis(gt_coco, pred_coco)
         data_list = self.load_annotations(gt_coco)
             
         return data_list

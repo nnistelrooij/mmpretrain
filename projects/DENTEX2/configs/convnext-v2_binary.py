@@ -29,9 +29,9 @@ classes = [
 ]
 attributes = [
     'Control',
-    'Caries',
+    # 'Caries',
     # 'Deep Caries',
-    # 'Impacted',
+    'Impacted',
     # 'Periapical Lesion',
 ]
 # classes = attributes

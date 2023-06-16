@@ -59,6 +59,10 @@ class CSRAMultiTaskHead(CSRAClsHead):
         """The forward process."""
         pre_logits = self.pre_logits(feats)
         logit = sum([head(pre_logits) for head in self.csra_heads])
+
+        for logits in feats[:-1]:
+            logit += logits
+            
         logits = logit.split(tuple(self.task_classes.values()), dim=1)
 
         task_logits = {task: logit for task, logit in zip(self.task_classes, logits)}

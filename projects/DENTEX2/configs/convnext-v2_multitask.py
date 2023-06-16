@@ -203,7 +203,7 @@ test_evaluator = dict(
 default_hooks = dict(
     checkpoint=dict(
         max_keep_ckpts=3,        
-        save_best='single-label/f1-score',
+        save_best='single-label/f1-score_classwise',
         rule='greater',
     ),
 )
@@ -229,9 +229,9 @@ param_scheduler = [
         type='LinearLR',
         start_factor=0.001,
         by_epoch=True,
-        end=5,
+        end=20,
         convert_to_iter_based=True),
-    dict(type='CosineAnnealingLR', eta_min=1e-05, by_epoch=True, begin=5)
+    dict(type='CosineAnnealingLR', eta_min=1e-05, by_epoch=True, begin=20)
 ]
 train_cfg = dict(by_epoch=True, max_epochs=100, val_interval=1)
 
