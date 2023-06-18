@@ -2,9 +2,16 @@ import math
 from typing import Any, Dict, Tuple
 
 from batchgenerators.transforms.abstract_transforms import Compose
-from batchgenerators.transforms.color_transforms import BrightnessMultiplicativeTransform, ContrastAugmentationTransform, BrightnessTransform
-from batchgenerators.transforms.color_transforms import GammaTransform
-from batchgenerators.transforms.noise_transforms import GaussianNoiseTransform, GaussianBlurTransform
+from batchgenerators.transforms.color_transforms import (
+    BrightnessTransform,
+    BrightnessMultiplicativeTransform,
+    ContrastAugmentationTransform, 
+    GammaTransform,
+)
+from batchgenerators.transforms.noise_transforms import (    
+    GaussianBlurTransform,
+    GaussianNoiseTransform,
+)
 from batchgenerators.transforms.resample_transforms import SimulateLowResolutionTransform
 from batchgenerators.transforms.spatial_transforms import SpatialTransform
 from mmcv.transforms import BaseTransform
@@ -19,6 +26,11 @@ from mmpretrain.datasets.transforms import RandomResizedCrop
 @TRANSFORMS.register_module()
 class RandomResizedClassPreservingCrop(RandomResizedCrop):
 
+    def __init__(self, margin: float=0.01, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.margin = margin
+
     @cache_randomness
     def rand_crop_params(self, img: np.ndarray) -> Tuple[int, int, int, int]:
         """Get parameters for ``crop`` for a random sized crop.
@@ -32,6 +44,7 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
         """
         h, w = img.shape[:2]
         area = h * w
+        margins = self.margin * h, self.margin * w
 
         for _ in range(self.max_attempts):
             target_area = np.random.uniform(*self.crop_ratio_range) * area
@@ -57,8 +70,10 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
             tooth_slices = ndimage.find_objects(img[slices][..., 2] > 0)
             if (
                 not tooth_slices or
-                any([t_slc.start == 0 for t_slc in tooth_slices[0]]) or
-                any([t_slc.stop == (slc.stop - slc.start) for slc, t_slc in zip(slices, tooth_slices[0])])
+                tooth_slices[0][0].start < margins[0] or
+                tooth_slices[0][1].start < margins[1] or
+                (slices[0].stop - slices[0].start) - tooth_slices[0].stop < margins[0] or
+                (slices[1].stop - slices[1].start) - tooth_slices[1].stop < margins[1]
             ):
                 continue
             
@@ -121,6 +136,7 @@ class NNUNetSpatialIntensityAugmentations(BaseTransform):
         order_data=3,
         disable=False,
         max_attempts=5,
+        margin: float=0.01,
         *args,
         **kwargs,
     ):
@@ -194,8 +210,12 @@ class NNUNetSpatialIntensityAugmentations(BaseTransform):
         # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
         self.max_attempts = max_attempts
+        self.margin = margin
 
     def transform(self, results: dict) -> dict:
+        h, w = results['img_shape'][:2]
+        margins = self.margin * h, self.margin * w
+
         for _ in range(self.max_attempts):
             img = results['img'].copy()
 
@@ -209,8 +229,10 @@ class NNUNetSpatialIntensityAugmentations(BaseTransform):
             slices = ndimage.find_objects(seg[0, 0])
             if (
                 not slices or
-                any([slc.start == 0 for slc in slices[0]]) or
-                any([slc.stop == dim for slc, dim in zip(slices[0], img.shape)])
+                slices[0][0].start < margins[0] or
+                slices[0][1].start < margins[1] or
+                img.shape[0] - slices[0][0].stop < margins[0] or
+                img.shape[1] - slices[0][1].stop < margins[1]
             ):
                 continue
             
@@ -221,20 +243,6 @@ class NNUNetSpatialIntensityAugmentations(BaseTransform):
             )), axes=(1, 2, 0))
 
             return results
-
-        if False:
-            import matplotlib.pyplot as plt
-
-            _, axs = plt.subplots(1, 3, figsize=(16, 6))
-            axs[0].imshow(img[..., 0])
-            axs[0].axis('off')
-            axs[1].imshow(results['img'][..., 0])
-            axs[1].axis('off')
-            axs[2].imshow(img[..., 2])
-            axs[2].axis('off')
-
-            plt.tight_layout()
-            plt.show()
 
         results['img'] = results['img'].astype(float)
 

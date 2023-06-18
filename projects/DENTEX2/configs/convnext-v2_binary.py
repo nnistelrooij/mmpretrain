@@ -1,5 +1,6 @@
 # _base_ = '../../../configs/convnext_v2/convnext-v2-tiny_32xb32_in1k.py'
 # _base_ = '../../../configs/efficientnet_v2/efficientnetv2-s_8xb32_in21k.py'
+# _base_ = '../../../configs/efficientnet/efficientnet-b7_8xb32_in1k.py'
 _base_ = '../../../configs/swin_transformer_v2/swinv2-tiny-w16_16xb64_in1k-256px.py'
 
 custom_imports = dict(

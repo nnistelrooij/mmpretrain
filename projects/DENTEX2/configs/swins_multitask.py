@@ -105,30 +105,22 @@ data_preprocessor = dict(num_classes=len(attributes) - 1)
 
 # auto_scale_lr = dict(enable=True)
 
-val_evaluator = dict(
-    _delete_=True,
-    type='MultiTasksAggregateMetric',
-    task_metrics={
-        attr: [
-            dict(type='PositiveLabelMetric', num_classes=2),
-            dict(type='PositiveLabelMetric', num_classes=2, average=None),
-            dict(type='ConfusionMatrix', num_classes=2),
-        ]
-        for attr in attributes[1:]
-    }
-)
-test_evaluator = dict(
-    _delete_=True,
-    type='MultiTasksAggregateMetric',
-    task_metrics={
-        attr: [
-            dict(type='SingleLabelMetric', num_classes=2),
-            dict(type='SingleLabelMetric', num_classes=2, average=None),
-            dict(type='ConfusionMatrix', num_classes=2),
-        ]
-        for attr in attributes[1:]
-    },
-)
+val_evaluator = [
+    dict(
+        _delete_=True,
+        type='MultiTasksAggregateMetric',
+        task_metrics={
+            attr: [
+                dict(type='PositiveLabelMetric', num_classes=2),
+                dict(type='PositiveLabelMetric', num_classes=2, average=None),
+                dict(type='ConfusionMatrix', num_classes=2),
+            ]
+            for attr in attributes[1:]
+        }
+    ),
+    dict(type='BinaryConfusionMatrix', num_classes = 2),
+]
+test_evaluator = val_evaluator
 
 optim_wrapper = dict(
     optimizer=dict(lr=0.001, weight_decay=0.001),
