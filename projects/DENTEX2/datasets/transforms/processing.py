@@ -72,8 +72,8 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
                 not tooth_slices or
                 tooth_slices[0][0].start < margins[0] or
                 tooth_slices[0][1].start < margins[1] or
-                (slices[0].stop - slices[0].start) - tooth_slices[0].stop < margins[0] or
-                (slices[1].stop - slices[1].start) - tooth_slices[1].stop < margins[1]
+                (slices[0].stop - slices[0].start) - tooth_slices[0][0].stop < margins[0] or
+                (slices[1].stop - slices[1].start) - tooth_slices[0][1].stop < margins[1]
             ):
                 continue
             

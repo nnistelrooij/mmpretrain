@@ -1,7 +1,8 @@
 # _base_ = '../../../configs/convnext_v2/convnext-v2-tiny_32xb32_in1k.py'
 # _base_ = '../../../configs/efficientnet_v2/efficientnetv2-s_8xb32_in21k.py'
 # _base_ = '../../../configs/efficientnet/efficientnet-b7_8xb32_in1k.py'
-_base_ = '../../../configs/swin_transformer_v2/swinv2-tiny-w16_16xb64_in1k-256px.py'
+# _base_ = '../../../configs/swin_transformer_v2/swinv2-tiny-w16_16xb64_in1k-256px.py'
+_base_ = '../../../configs/beitv2/benchmarks/beit-base-p16_8xb128-coslr-100e_in1k.py'
 
 custom_imports = dict(
     imports=[
@@ -21,6 +22,8 @@ run = 1
 multilabel = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
+
+pretrain_checkpoint = 'work_dirs/beit-v2/pretrained.pth'
 
 classes = [
     '11', '12', '13', '14', '15', '16', '17', '18',
@@ -121,10 +124,18 @@ test_dataloader = dict(dataset=dict(
 
 data_preprocessor = dict(num_classes=2)
 model = dict(
-    backbone=(
-        dict(pad_small_map=True)
-        if _base_.model.backbone.type == 'SwinTransformerV2' else
-        dict()
+    data_preprocessor=(
+        dict(
+            mean=[118.4439122, 118.4439122, 20.45650507],
+            std=[45.39504314, 45.39504314, 69.26716533],
+        ) if pretrain_checkpoint else dict()
+    ),
+    backbone=dict(
+        init_cfg=(
+            dict(type='Pretrained', checkpoint='work_dirs/beit-v2/pretrained.pth', prefix='backbone')
+            if pretrain_checkpoint else
+            None
+        ),
     ),
     head=dict(
         num_classes=2,
@@ -134,18 +145,20 @@ model = dict(
     train_cfg=None,
 )
 # auto_scale_lr = dict(enable=True)
-if _base_.model.backbone.type == 'ConvNeXt' and _base_.model.backbone.arch == 'base':
-    load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k_20230104-c48d16a5.pth'
-    # load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k-384px_20230104-379425cc.pth'
-elif _base_.model.backbone.type == 'ConvNeXt' and _base_.model.backbone.arch == 'tiny':
-    load_from = 'checkpoints/convnext-v2-tiny_fcmae-in21k-pre_3rdparty_in1k_20230104-8cc8b8f2.pth'
-elif _base_.model.backbone.type == 'EfficientNetV2':
-    load_from = 'checkpoints/efficientnetv2-s_in21k-pre-3rdparty_in1k_20221220-7a7c8475.pth'
-else:
-    load_from = 'checkpoints/swinv2-tiny-w16_3rdparty_in1k-256px_20220803-9651cdd7.pth'
+
+if not pretrain_checkpoint:
+    if _base_.model.backbone.type == 'ConvNeXt' and _base_.model.backbone.arch == 'base':
+        load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k_20230104-c48d16a5.pth'
+        # load_from = 'checkpoints/convnext-v2-base_fcmae-in21k-pre_3rdparty_in1k-384px_20230104-379425cc.pth'
+    elif _base_.model.backbone.type == 'ConvNeXt' and _base_.model.backbone.arch == 'tiny':
+        load_from = 'checkpoints/convnext-v2-tiny_fcmae-in21k-pre_3rdparty_in1k_20230104-8cc8b8f2.pth'
+    elif _base_.model.backbone.type == 'EfficientNetV2':
+        load_from = 'checkpoints/efficientnetv2-s_in21k-pre-3rdparty_in1k_20221220-7a7c8475.pth'
+    else:
+        load_from = 'checkpoints/swinv2-tiny-w16_3rdparty_in1k-256px_20220803-9651cdd7.pth'
 
 optim_wrapper = dict(
-    optimizer=dict(lr=0.001, weight_decay=0.001),
+    optimizer=dict(type='Lion', lr=0.001, weight_decay=0.001),
     clip_grad=(
         dict(_delete_=True, max_norm=5.0)
         if _base_.model.backbone.type == 'ConvNeXt' else
