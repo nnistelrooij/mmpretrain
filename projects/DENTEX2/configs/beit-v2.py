@@ -1,4 +1,4 @@
-_base_ = '../../../configs/beitv2/benchmarks/beit-base-p16_8xb128-coslr-100e_in1k.py'
+_base_ = '../../../configs/beitv2/beitv2_beit-base-p16_8xb256-amp-coslr-1600e_in1k.py'
 
 custom_imports = dict(
     imports=[
@@ -13,19 +13,16 @@ custom_imports = dict(
 )
 
 
-model = dict(
-    data_preprocessor=dict(
-        mean=[118.4439122, 118.4439122, 20.45650507],
-        std=[45.39504314, 45.39504314, 69.26716533],
-    ),
-    train_cfg=None,
-)
+model = dict(data_preprocessor=dict(
+    mean=[115.69932057, 115.69932057, 16.6501554],
+    std=[45.12872729, 45.12872729, 62.99652334],
+))
 
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
-data_root = '/mnt/z/nielsvannistelrooij/dentex/darwin/'
-export = 'fdi-checkedv2'
-fold = '_diagnosis_0'
+# data_root = '/mnt/z/nielsvannistelrooij/dentex/darwin/'
+export = 'external'
+fold = '_clean_0'
 run = 0
 multilabel = False
 data_prefix = data_root + 'images'
@@ -57,49 +54,27 @@ train_dataloader = dict(
             type='ToothCropDataset',
             data_root=data_root,
             data_prefix=data_prefix,
-            ann_file=ann_prefix + f'train{fold}.json',
-            pred_file=data_root + 'full_pred.json',
+            ann_file=data_root + 'all_pred.json',
+            pred_file=data_root + 'all_pred.json',
             metainfo=dict(classes=classes, attributes=attributes),
             extend=0.1,
             pipeline=[
                 dict(type='LoadImageFromFile'),
-                dict(type='RandomResizedClassPreservingCrop', scale=256),
-                # dict(type='SeparateOPGMask'),
                 dict(type='NNUNetSpatialIntensityAugmentations'),
-                # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
-                # dict(
-                #     type='ResizeEdge',
-                #     scale=256,
-                #     edge='short',
-                #     backend='pillow',
-                #     interpolation='bicubic'),
-                # dict(type='CenterCrop', crop_size=224),
                 dict(type='RandomFlip', prob=0.5, direction='horizontal'),
-                dict(type='PackInputs')
+                dict(type='RandomResizedClassPreservingCrop', scale=224, two_pic=True),
+                dict(
+                    type='BEiTMaskGenerator',
+                    input_size=(14, 14),
+                    num_masking_patches=75,
+                    max_num_patches=75,
+                    min_num_patches=16,
+                ),
+                dict(type='PackInputs'),
             ],
         ),
     ),
 )
-
-val_dataloader = dict(dataset=dict(
-    type='ToothCropDataset',
-    data_root=data_root,
-    data_prefix=data_prefix,
-    ann_file=ann_prefix + f'val{fold}.json',
-    pred_file=data_root + 'full_pred.json',
-    metainfo=dict(classes=classes, attributes=attributes),
-    extend=0.1,
-))
-
-test_dataloader = dict(dataset=dict(
-    type='ToothCropDataset',
-    data_root=data_root,
-    data_prefix=data_prefix,
-    ann_file=ann_prefix + f'val{fold}.json',
-    pred_file=data_root + 'full_pred.json',
-    metainfo=dict(classes=classes, attributes=attributes),
-    extend=0.1,
-))
 
 
 optim_wrapper = dict(

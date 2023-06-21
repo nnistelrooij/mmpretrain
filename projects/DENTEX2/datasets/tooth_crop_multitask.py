@@ -23,7 +23,7 @@ class ToothCropMultitaskDataset(ToothCropDataset):
 
         super().__init__(metainfo=metainfo, *args, **kwargs)
 
-    def load_annotations(self, coco, max_samples=500):
+    def load_annotations(self, coco, max_samples=float('inf')):
         ann_img_stems = [Path(img_dict['file_name']).stem for img_dict in coco.imgs.values()]
 
         file_attributes = {}

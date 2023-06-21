@@ -4,7 +4,7 @@ from typing import List
 from mmengine.model import BaseTTAModel
 
 from mmpretrain.registry import MODELS
-from mmpretrain.structures import DataSample
+from mmpretrain.structures import DataSample, MultiTaskDataSample
 
 
 @MODELS.register_module()
@@ -29,8 +29,18 @@ class AverageClsScoreTTA(BaseTTAModel):
         return merged_data_samples
 
     def _merge_single_sample(self, data_samples):
-        merged_data_sample: DataSample = data_samples[0].new()
-        merged_score = sum(data_sample.pred_score
-                           for data_sample in data_samples) / len(data_samples)
-        merged_data_sample.set_pred_score(merged_score)
+        if hasattr(data_samples[0], 'tasks'):
+            merged_data_sample: MultiTaskDataSample = data_samples[0].new()
+            for task in merged_data_sample.tasks:
+                merged_score = sum(
+                    getattr(data_sample, task).pred_score
+                    for data_sample in data_samples
+                ) / len(data_samples)
+                getattr(merged_data_sample, task).set_pred_score(merged_score)
+        else:
+            merged_data_sample: DataSample = data_samples[0].new()
+            merged_score = sum(data_sample.pred_score
+                            for data_sample in data_samples) / len(data_samples)
+            merged_data_sample.set_pred_score(merged_score)
+        
         return merged_data_sample

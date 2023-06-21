@@ -63,18 +63,23 @@ class MultilabelConvNeXts(nn.Module):
             classifier.load_state_dict(ckpt['state_dict'], strict=False)
 
     def _binary_forward(self, x):
-        binary_feats = torch.zeros((x.shape[0], 0, x.shape[2] // 32, x.shape[3] // 32))
-        binary_logits = torch.zeros((x.shape[0], len(self.binary_classifiers)))
+        binary_feats = torch.zeros((x.shape[0], 0, x.shape[2] // 32, x.shape[3] // 32)).to(x)
+        binary_logits = torch.zeros((x.shape[0], len(self.binary_classifiers))).to(x)
+
 
         if self.mix_features:
             for classifier in self.binary_classifiers.values():
-                feats = classifier.backbone(x)
+                with torch.no_grad():
+                    feats = classifier.backbone(x)
                 binary_feats = torch.cat((binary_feats, feats[-1]), dim=1)
 
         if self.mix_outputs:
-            logits = torch.zeros((x.shape[0], 0))
+            logits = torch.zeros((x.shape[0], 0)).to(x)
             for classifier in self.binary_classifiers.values():
-                logits = torch.cat((logits, classifier(x)), dim=1)
+                with torch.no_grad():
+                    classifier_logits = classifier(x)
+
+                logits = torch.cat((logits, classifier_logits), dim=1)
 
             binary_logits += self.MLP(logits)
 
@@ -85,8 +90,7 @@ class MultilabelConvNeXts(nn.Module):
             self._init_pretrained()
             self.full_init = True
 
-        with torch.no_grad():
-            binary_logits, binary_feats = self._binary_forward(x)
+        binary_logits, binary_feats = self._binary_forward(x)
 
         multilabel_feats = self.multilabel_backbone(x)[-1]
 

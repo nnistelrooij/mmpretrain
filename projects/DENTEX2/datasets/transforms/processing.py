@@ -26,10 +26,17 @@ from mmpretrain.datasets.transforms import RandomResizedCrop
 @TRANSFORMS.register_module()
 class RandomResizedClassPreservingCrop(RandomResizedCrop):
 
-    def __init__(self, margin: float=0.01, *args, **kwargs):
+    def __init__(
+        self,
+        margin: float=0.02,
+        two_pic: bool=False,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
 
         self.margin = margin
+        self.two_pic = two_pic
 
     @cache_randomness
     def rand_crop_params(self, img: np.ndarray) -> Tuple[int, int, int, int]:
@@ -93,6 +100,14 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
         offset_h = (h - target_h) // 2
         offset_w = (w - target_w) // 2
         return offset_h, offset_w, target_h, target_w
+    
+    def transform(self, results: dict) -> dict:
+        results = super().transform(results)
+
+        if self.two_pic:
+            results['img'] = [results['img'].copy(), results['img'].copy()]
+
+        return results
  
 
 @TRANSFORMS.register_module()
@@ -136,7 +151,7 @@ class NNUNetSpatialIntensityAugmentations(BaseTransform):
         order_data=3,
         disable=False,
         max_attempts=5,
-        margin: float=0.01,
+        margin: float=0.05,
         *args,
         **kwargs,
     ):

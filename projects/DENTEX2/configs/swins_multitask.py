@@ -5,11 +5,10 @@ custom_imports = dict(
     imports=[
         'projects.DENTEX2.datasets',
         'projects.DENTEX2.datasets.transforms.processing',
-        'projects.DENTEX2.evaluation.metrics.multi_tasks_aggregate',
         'projects.DENTEX2.mlp',
         'projects.DENTEX2.convnext.csra_head',
         'projects.DENTEX2.visualization.visualizer',
-        'projects.DENTEX2.evaluation.metrics.positive_label',
+        'projects.DENTEX2.evaluation.metrics',
         'projects.DENTEX2.convnext.multilabel',
     ],
     allow_failed_imports=False,
@@ -107,18 +106,18 @@ data_preprocessor = dict(num_classes=len(attributes) - 1)
 
 val_evaluator = [
     dict(
-        _delete_=True,
         type='MultiTasksAggregateMetric',
         task_metrics={
             attr: [
-                dict(type='PositiveLabelMetric', num_classes=2),
-                dict(type='PositiveLabelMetric', num_classes=2, average=None),
+                dict(type='PositiveLabelMetric', num_classes=2, prefix=attr),
+                dict(type='PositiveLabelMetric', num_classes=2, prefix=attr, average=None),
                 dict(type='ConfusionMatrix', num_classes=2),
             ]
             for attr in attributes[1:]
         }
     ),
-    dict(type='BinaryConfusionMatrix', num_classes = 2),
+    dict(type='BinaryConfusionMatrix', num_classes=2, prefix='binary-label'),
+    dict(type='BinaryLabelMetric', num_classes=2, prefix='binary-label'),
 ]
 test_evaluator = val_evaluator
 
@@ -132,7 +131,7 @@ train_cfg = dict(max_epochs=100)
 default_hooks = dict(
     checkpoint=dict(
         max_keep_ckpts=1,        
-        save_best='single-label/f1-score_classwise',
+        save_best='binary-label/f1-score',
         rule='greater',
     ),
 )
