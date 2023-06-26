@@ -2,7 +2,11 @@
 # _base_ = '../../../configs/efficientnet_v2/efficientnetv2-s_8xb32_in21k.py'
 # _base_ = '../../../configs/efficientnet/efficientnet-b7_8xb32_in1k.py'
 # _base_ = '../../../configs/swin_transformer_v2/swinv2-tiny-w16_16xb64_in1k-256px.py'
-_base_ = '../../../configs/beitv2/benchmarks/beit-base-p16_8xb128-coslr-100e_in1k.py'
+# _base_ = '../../../configs/beitv2/benchmarks/beit-base-p16_8xb128-coslr-100e_in1k.py'
+# _base_ = '../../../configs/swin_transformer/swin-base_16xb64_in1k.py'
+# _base_ = '../../../configs/swin_transformer/swin-large_16xb64_in1k.py'
+_base_ = '../../../configs/simmim/benchmarks/swin-base-w7_8xb256-coslr-100e_in1k.py'
+# _base_ = '../../../configs/simmim/benchmarks/swin-large-w14_8xb256-coslr-100e_in1k.py'
 
 custom_imports = dict(
     imports=[
@@ -23,7 +27,9 @@ multilabel = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
 
-pretrain_checkpoint = 'work_dirs/beit-v2/pretrained.pth'
+pretrain_checkpoint = 'work_dirs/simmim_swin/epoch_100.pth'
+pretrain_checkpoint = 'work_dirs/simmim_swin/epoch_100_base.pth'
+# pretrain_checkpoint = ''
 
 classes = [
     '11', '12', '13', '14', '15', '16', '17', '18',
@@ -40,12 +46,15 @@ attributes = [
 ]
 # classes = attributes
 
+batch_size = 128
+gpus = 1
+img_size = 256
 train_dataloader = dict(
-    batch_size=64,
+    batch_size=batch_size,
+    sampler=dict(_delete_=True, type='ClassAwareSampler'),
     dataset=dict(
         _delete_=True,
-        type='ClassBalancedDataset',
-        oversample_thr=0.1,
+        type='MultiImageMixDataset',
         dataset=dict(
             type='ToothCropDataset',
             data_root=data_root,
@@ -54,54 +63,34 @@ train_dataloader = dict(
             pred_file='full_pred.json',
             metainfo=dict(classes=classes, attributes=attributes),
             extend=0.1,
-            pipeline=[
-                dict(type='LoadImageFromFile'),
-                dict(
-                    type='ResizeEdge',
-                    scale=256,
-                    edge='short',
-                    backend='pillow',
-                    interpolation='bicubic'),
-                dict(type='CenterCrop', crop_size=256),
-                dict(type='RandomFlip', prob=0.5, direction='horizontal'),
-                dict(type='PackInputs')
-            ],
+            pipeline=[dict(type='LoadImageFromFile')],
         ),
-    ),
-)
-
-batch_size = 128
-train_dataloader = dict(
-    batch_size=batch_size,
-    sampler=dict(_delete_=True, type='ClassAwareSampler'),
-    dataset=dict(
-        _delete_=True,
-        type='ToothCropDataset',
-        data_root=data_root,
-        data_prefix=data_prefix,
-        ann_file=ann_prefix + f'train{fold}.json',
-        pred_file='full_pred.json',
-        metainfo=dict(classes=classes, attributes=attributes),
-        extend=0.1,
         pipeline=[
-            dict(type='LoadImageFromFile'),
-            dict(type='RandomResizedClassPreservingCrop', scale=256),
+            *(
+                (dict(type='RandomToothFlip', prob=0.1),)
+                if attributes[-1] != 'Impacted' else ()
+            ),
+            dict(type='RandomResizedClassPreservingCrop', scale=img_size),
             # dict(type='SeparateOPGMask'),
             dict(type='NNUNetSpatialIntensityAugmentations'),
             # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
-            # dict(
-            #     type='ResizeEdge',
-            #     scale=256,
-            #     edge='short',
-            #     backend='pillow',
-            #     interpolation='bicubic'),
-            # dict(type='CenterCrop', crop_size=224),
             dict(type='RandomFlip', prob=0.5, direction='horizontal'),
-            dict(type='PackInputs')
+            dict(type='PackInputs'),
         ],
     ),
 )
 
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(
+        type='ResizeEdge',
+        scale=img_size + 32,
+        edge='short',
+        backend='pillow',
+        interpolation='bicubic'),
+    dict(type='CenterCrop', crop_size=img_size),
+    dict(type='PackInputs')
+]
 val_dataloader = dict(dataset=dict(
     type='ToothCropDataset',
     data_root=data_root,
@@ -110,6 +99,7 @@ val_dataloader = dict(dataset=dict(
     pred_file='full_pred.json',
     metainfo=dict(classes=classes, attributes=attributes),
     extend=0.1,
+    pipeline=test_pipeline,
 ))
 
 test_dataloader = dict(dataset=dict(
@@ -120,22 +110,26 @@ test_dataloader = dict(dataset=dict(
     pred_file='full_pred.json',
     metainfo=dict(classes=classes, attributes=attributes),
     extend=0.1,
+    pipeline=test_pipeline,
 ))
 
 data_preprocessor = dict(num_classes=2)
 model = dict(
     data_preprocessor=(
         dict(
-            mean=[118.4439122, 118.4439122, 20.45650507],
-            std=[45.39504314, 45.39504314, 69.26716533],
+            mean=[115.69932057, 115.69932057, 16.6501554],
+            std=[45.12872729, 45.12872729, 62.99652334],
         ) if pretrain_checkpoint else dict()
     ),
     backbone=dict(
-        init_cfg=(
-            dict(type='Pretrained', checkpoint='work_dirs/beit-v2/pretrained.pth', prefix='backbone')
-            if pretrain_checkpoint else
-            None
-        ),
+        **(dict(init_cfg=dict(
+            type='Pretrained', 
+            checkpoint=pretrain_checkpoint,
+            prefix='backbone',
+        )) if pretrain_checkpoint else dict()),
+        pad_small_map=True,
+        drop_path_rate=0.8,
+        img_size=img_size,
     ),
     head=dict(
         num_classes=2,
@@ -154,30 +148,38 @@ if not pretrain_checkpoint:
         load_from = 'checkpoints/convnext-v2-tiny_fcmae-in21k-pre_3rdparty_in1k_20230104-8cc8b8f2.pth'
     elif _base_.model.backbone.type == 'EfficientNetV2':
         load_from = 'checkpoints/efficientnetv2-s_in21k-pre-3rdparty_in1k_20221220-7a7c8475.pth'
-    else:
+    elif _base_.model.backbone.type == 'SwinTransformerV2':
         load_from = 'checkpoints/swinv2-tiny-w16_3rdparty_in1k-256px_20220803-9651cdd7.pth'
+    else:
+        load_from = 'checkpoints/beitv2-base_3rdparty_in1k_20221114-73e11905.pth'
 
 optim_wrapper = dict(
-    optimizer=dict(type='Lion', lr=0.001, weight_decay=0.001),
+    optimizer=dict(type='AdamW', lr=2e-4 if pretrain_checkpoint else 0.001, weight_decay=0.05),
     clip_grad=(
         dict(_delete_=True, max_norm=5.0)
         if _base_.model.backbone.type == 'ConvNeXt' else
         dict(max_norm=5.0)
     ),
-    accumulative_counts=128 // batch_size,
+    accumulative_counts=256 // batch_size // gpus,
 )
 
+warmup_epochs = 10 // (1 + bool(pretrain_checkpoint))
 param_scheduler = [
     # warm up learning rate scheduler
     dict(
         type='LinearLR',
         start_factor=1e-3,
         by_epoch=True,
-        end=5 * (batch_size // 32),
+        end=warmup_epochs,
         # update by iter
         convert_to_iter_based=True),
     # main learning rate scheduler
-    dict(type='CosineAnnealingLR', eta_min=1e-5, by_epoch=True, begin=5 * (batch_size // 32))
+    dict(
+        type='CosineAnnealingLR',
+        eta_min=1e-6,
+        by_epoch=True,
+        begin=warmup_epochs,
+    ),
 ]
 
 val_evaluator = [
@@ -191,7 +193,7 @@ test_evaluator = [
     dict(type='ConfusionMatrix', num_classes=2),
 ]
 
-train_cfg = dict(max_epochs=100)
+train_cfg = dict(max_epochs=80)
 custom_hooks = [
     dict(type='ClassCountsHook', num_classes=2),
     # dict(type='EMAHook', momentum=4e-5, priority='ABOVE_NORMAL'),
@@ -200,7 +202,7 @@ custom_hooks = [
 default_hooks = dict(
     checkpoint=dict(
         max_keep_ckpts=1,        
-        save_best='single-label/f1-score_positive',
+        save_best='positive-label/auc',
         rule='greater',
     ),
 )

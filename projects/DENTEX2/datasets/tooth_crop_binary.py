@@ -1,4 +1,6 @@
+from collections import defaultdict
 from pathlib import Path
+import re
 
 import cv2
 import numpy as np
@@ -103,14 +105,14 @@ class ToothCropDataset(CustomDataset):
         gt_coco: COCO,
         pred_coco: COCO,
     ):
-        ann_img_stems = [Path(img_dict['file_name']).stem for _, img_dict in gt_coco.imgs.items()]
-        saved_img_stems = [f.stem.split('_')[0] for f in Path(self.img_prefix).glob('*/*.png')]
-
-        if all(stem in saved_img_stems for stem in ann_img_stems):
-            return
+        saved_img_stems = set([f.stem.split('_')[0] for f in Path(self.img_prefix).glob('*/*.png')])
         
         for img_id, img_dict in tqdm(gt_coco.imgs.items(), total=len(gt_coco.imgs)):
             img_path = Path(self.img_prefix) / img_dict['file_name']
+
+            if img_path.stem in saved_img_stems:
+                continue
+
             img = cv2.imread(str(img_path))
 
             preds = pred_coco.imgToAnns[img_id]
@@ -183,7 +185,12 @@ class ToothCropDataset(CustomDataset):
         gt_coco = COCO(self.ann_file)
         pred_coco = COCO(self.pred_file)
 
-        # self.crop_tooth_diagnosis(gt_coco, pred_coco)
+        self.crop_tooth_diagnosis(gt_coco, pred_coco)
         data_list = self.load_annotations(gt_coco)
+
+        self.fdi2idx = defaultdict(list)
+        for i, d in enumerate(data_list):
+            fdi = re.split('\.|_', d['img_path'])[-2]
+            self.fdi2idx[fdi].append(i)
             
         return data_list

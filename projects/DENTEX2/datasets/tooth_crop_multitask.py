@@ -36,7 +36,7 @@ class ToothCropMultitaskDataset(ToothCropDataset):
                 if f.stem not in file_attributes and i >= max_samples:
                     continue
 
-                if f.stem.split('_')[0] not in ann_img_stems:
+                if '_'.join(f.stem.split('_')[:-1]) not in ann_img_stems:
                     continue
 
                 attribute_idx = self.metainfo['attributes'].index(label) - 1

@@ -23,6 +23,7 @@ multilabel = False
 supervise_number = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
+img_size = 224
 
 classes = [
     '11', '12', '13', '14', '15', '16', '17', '18',
@@ -48,27 +49,24 @@ train_dataloader = dict(
         type='ClassBalancedDataset',
         oversample_thr=0.1,
         dataset=dict(
-            type='ToothCropMultitaskDataset',
-            supervise_number=supervise_number,
-            data_root=data_root,
-            data_prefix=data_prefix,
-            ann_file=ann_prefix + f'train{fold}.json',
-            pred_file='full_pred.json',
-            metainfo=dict(classes=classes, attributes=attributes),
-            extend=0.1,
-            pipeline=[
-                dict(type='LoadImageFromFile'),
-                dict(type='RandomResizedClassPreservingCrop', scale=256),
+            type='MultiImageMixDataset',
+            dataset=dict(
+                type='ToothCropMultitaskDataset',
+                supervise_number=supervise_number,
+                data_root=data_root,
+                data_prefix=data_prefix,
+                ann_file=ann_prefix + f'train{fold}.json',
+                pred_file='full_pred.json',
+                metainfo=dict(classes=classes, attributes=attributes),
+                extend=0.1,
+                pipeline=[dict(type='LoadImageFromFile')],
+            ),
+            pipeline=[                    
+                dict(type='RandomToothFlip', prob=0.1),
+                dict(type='RandomResizedClassPreservingCrop', scale=img_size),
                 # dict(type='SeparateOPGMask'),
                 dict(type='NNUNetSpatialIntensityAugmentations'),
                 # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
-                # dict(
-                #     type='ResizeEdge',
-                #     scale=256,
-                #     edge='short',
-                #     backend='pillow',
-                #     interpolation='bicubic'),
-                # dict(type='CenterCrop', crop_size=224),
                 dict(type='RandomFlip', prob=0.5, direction='horizontal'),
                 woll,
             ],
@@ -122,11 +120,11 @@ val_evaluator = [
 test_evaluator = val_evaluator
 
 optim_wrapper = dict(
-    optimizer=dict(lr=0.001, weight_decay=0.001),
+    optimizer=dict(lr=2e-4, weight_decay=0.05),
     clip_grad=dict(max_norm=5.0),
-    accumulative_counts=128 // batch_size,
+    accumulative_counts=256 // batch_size,
 )
-train_cfg = dict(max_epochs=100)
+train_cfg = dict(max_epochs=35)
 
 default_hooks = dict(
     checkpoint=dict(
