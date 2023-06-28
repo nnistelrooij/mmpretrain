@@ -21,15 +21,19 @@ custom_imports = dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'fdi-checkedv2'
-fold = '_diagnosis_0'
+fold = '_diagnosis_4'
 run = 1
 multilabel = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
+diag_drive = True
 
 pretrain_checkpoint = 'work_dirs/simmim_swin/epoch_100.pth'
 pretrain_checkpoint = 'work_dirs/simmim_swin/epoch_100_base.pth'
 # pretrain_checkpoint = ''
+
+if pretrain_checkpoint and diag_drive:
+    pretrain_checkpoint = '/mnt/diag/DENTEX/dentex/' + pretrain_checkpoint
 
 classes = [
     '11', '12', '13', '14', '15', '16', '17', '18',
@@ -41,8 +45,8 @@ attributes = [
     'Control',
     # 'Caries',
     # 'Deep Caries',
-    'Impacted',
-    # 'Periapical Lesion',
+    # 'Impacted',
+    'Periapical Lesion',
 ]
 # classes = attributes
 
@@ -211,4 +215,7 @@ visualizer = dict(vis_backends=[
     dict(type='TensorboardVisBackend'),
 ])
 
-work_dir = f'work_dirs/opg_crops_fold{fold}_{attributes[-1]}_{run}_swin'
+if diag_drive:
+    work_dir = f'/mnt/diag/DENTEX/dentex/work_dirs/opg_crops_fold{fold}_{attributes[-1]}_{run}_swin'
+else:
+    work_dir = f'work_dirs/opg_crops_fold{fold}_{attributes[-1]}_{run}_swin'

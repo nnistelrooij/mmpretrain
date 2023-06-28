@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import numpy as np
 import torch
 
@@ -25,16 +27,16 @@ class MultiTasksAggregateMetric(MultiTasksMetric):
         """
         metrics = super().evaluate(size)
         
-        aggregate_metrics = {}
+        aggregate_metrics = defaultdict(list)
         for metric, value in metrics.items():
             _, metric = metric.split('_', 1)
-            if 'classwise' not in metric:
+            if 'classwise' in metric:
                 continue
 
-            aggregate_metrics.setdefault(metric, []).append(value[1])
+            aggregate_metrics[metric].append(value)
         
         for metric, values in aggregate_metrics.items():
-            if isinstance(values[0], float):
+            if isinstance(values[0], float) or isinstance(values[0], np.float32):
                 aggregate_metrics[metric] = np.mean(values).item()
                 continue
 

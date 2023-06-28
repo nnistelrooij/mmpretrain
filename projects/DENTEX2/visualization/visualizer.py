@@ -110,7 +110,7 @@ class MultiTaskVisualizer(UniversalVisualizer):
             pd = prefix
             for task in data_sample.tasks:
                 
-                if data_sample.get(task).pred_label[1] == 1:
+                if data_sample.get(task).pred_label[0] == 1:
                     pd += task[0]                
             
             texts.append(pd)

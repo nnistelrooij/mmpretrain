@@ -17,13 +17,14 @@ custom_imports = dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'fdi-checkedv2'
-fold = '_diagnosis_0'
+fold = '_diagnosis_4'
 run = 0
 multilabel = False
 supervise_number = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
-img_size = 224
+img_size = 256
+diag_drive = False
 
 classes = [
     '11', '12', '13', '14', '15', '16', '17', '18',
@@ -74,6 +75,17 @@ train_dataloader = dict(
     ),
 )
 
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(
+        type='ResizeEdge',
+        scale=img_size + 32,
+        edge='short',
+        backend='pillow',
+        interpolation='bicubic'),
+    dict(type='CenterCrop', crop_size=img_size),
+    woll,
+]
 val_dataloader = dict(dataset=dict(
     type='ToothCropMultitaskDataset',
     supervise_number=supervise_number,
@@ -83,24 +95,25 @@ val_dataloader = dict(dataset=dict(
     pred_file='full_pred.json',
     metainfo=dict(classes=classes, attributes=attributes),
     extend=0.1,
-    pipeline=_base_.val_dataloader.dataset.pipeline[:-1] + [woll]
+    pipeline=test_pipeline,
 ))
 
-test_dataloader = dict(dataset=dict(
-    type='ToothCropMultitaskDataset',
-    supervise_number=supervise_number,
-    data_root=data_root,
-    data_prefix=data_prefix,
-    ann_file=ann_prefix + f'val{fold}.json',
-    pred_file='full_pred.json',
-    metainfo=dict(classes=classes, attributes=attributes),
-    extend=0.1,
-    pipeline=_base_.test_dataloader.dataset.pipeline[:-1] + [woll]
-))
+test_dataloader = dict(
+    sampler=dict(shuffle=True),
+    dataset=dict(
+        type='ToothCropMultitaskDataset',
+        supervise_number=supervise_number,
+        data_root=data_root,
+        data_prefix=data_prefix,
+        ann_file=ann_prefix + f'val{fold}.json',
+        pred_file='full_pred.json',
+        metainfo=dict(classes=classes, attributes=attributes),
+        extend=0.1,
+        pipeline=test_pipeline,
+    ),
+)
 
 data_preprocessor = dict(num_classes=len(attributes) - 1)
-
-# auto_scale_lr = dict(enable=True)
 
 val_evaluator = [
     dict(
@@ -124,12 +137,31 @@ optim_wrapper = dict(
     clip_grad=dict(max_norm=5.0),
     accumulative_counts=256 // batch_size,
 )
-train_cfg = dict(max_epochs=35)
+train_cfg = dict(max_epochs=60)
+
+warmup_epochs = 5
+param_scheduler = [
+    # warm up learning rate scheduler
+    dict(
+        type='LinearLR',
+        start_factor=1e-3,
+        by_epoch=True,
+        end=warmup_epochs,
+        # update by iter
+        convert_to_iter_based=True),
+    # main learning rate scheduler
+    dict(
+        type='CosineAnnealingLR',
+        eta_min=1e-6,
+        by_epoch=True,
+        begin=warmup_epochs,
+    ),
+]
 
 default_hooks = dict(
     checkpoint=dict(
         max_keep_ckpts=1,        
-        save_best='binary-label/f1-score',
+        save_best='binary-label/auc',
         rule='greater',
     ),
 )
@@ -141,4 +173,7 @@ visualizer = dict(
     ],
 )
 
-work_dir = f'work_dirs/opg_crops_fold_multitask{fold}_swins'
+if diag_drive:
+    work_dir = f'/mnt/diag/DENTEX/dentex/work_dirs/opg_crops_fold_multitask{fold}_swins'
+else:
+    work_dir = f'work_dirs/opg_crops_fold_multitask{fold}_swins'

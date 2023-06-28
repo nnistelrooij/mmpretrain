@@ -12,9 +12,9 @@ class MultilabelConvNeXts(nn.Module):
     def __init__(
         self,
         classifiers: Dict[str, Any],
-        pretrained: str,
         mix_features: bool,
         mix_outputs: bool,
+        pretrained: str='',
     ):
         super().__init__()
 
@@ -45,7 +45,7 @@ class MultilabelConvNeXts(nn.Module):
         # load pretrained ImageNet-1k weights
         state_dict = torch.load(self.pretrained)['state_dict']
         backbone_dict = {}
-        for key,value in state_dict.items():
+        for key, value in state_dict.items():
             if 'backbone' in key:
                 backbone_dict[key.replace('backbone.', '')] = value
 
@@ -86,7 +86,7 @@ class MultilabelConvNeXts(nn.Module):
         return binary_logits, binary_feats
 
     def forward(self, x):
-        if not self.full_init:
+        if not self.full_init and self.training:
             self._init_pretrained()
             self.full_init = True
 
@@ -95,3 +95,35 @@ class MultilabelConvNeXts(nn.Module):
         multilabel_feats = self.multilabel_backbone(x)[-1]
 
         return binary_logits, torch.cat((binary_feats, multilabel_feats), dim=1)
+    
+    def get_layer_depth(self, param_name: str, prefix: str = ''):
+        """Get the layer-wise depth of a parameter.
+
+        Args:
+            param_name (str): The name of the parameter.
+
+        Returns:
+            Tuple[int, int]: The layer-wise depth and the max depth.
+        """
+
+        num_layers = sum(self.multilabel_backbone.depths) + 2
+
+        if not param_name.startswith(prefix):
+            # For subsequent module like head
+            return num_layers - 1, num_layers
+
+        param_name = param_name[len(prefix):]
+
+        if param_name.startswith('patch_embed'):
+            layer_depth = 0
+        elif param_name.startswith('stages'):
+            stage_id = int(param_name.split('.')[1])
+            block_id = param_name.split('.')[3]
+            if block_id in ('reduction', 'norm'):
+                layer_depth = sum(self.multilabel_backbone.depths[:stage_id + 1])
+            else:
+                layer_depth = sum(self.multilabel_backbone.depths[:stage_id]) + int(block_id) + 1
+        else:
+            layer_depth = num_layers - 1
+
+        return layer_depth, num_layers
