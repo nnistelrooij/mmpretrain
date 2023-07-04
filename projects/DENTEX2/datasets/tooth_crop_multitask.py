@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
+from pycocotools.coco import COCO
 
 from mmpretrain.registry import DATASETS
 
@@ -23,8 +24,14 @@ class ToothCropMultitaskDataset(ToothCropDataset):
 
         super().__init__(metainfo=metainfo, *args, **kwargs)
 
-    def load_annotations(self, coco, max_samples=float('inf')):
+    def load_annotations(self, stem2logits, coco, max_samples=float('inf')):
         ann_img_stems = [Path(img_dict['file_name']).stem for img_dict in coco.imgs.values()]
+
+        if self.omit_file:
+            omit_coco = COCO(self.omit_file)
+            omit_img_stems = [Path(img_dict['file_name']).stem for img_dict in omit_coco.imgs.values()]
+        else:
+            omit_img_stems = []
 
         file_attributes = {}
         for label in self.metainfo['attributes']:
@@ -36,7 +43,10 @@ class ToothCropMultitaskDataset(ToothCropDataset):
                 if f.stem not in file_attributes and i >= max_samples:
                     continue
 
-                if '_'.join(f.stem.split('_')[:-1]) not in ann_img_stems:
+                if (
+                    '_'.join(f.stem.split('_')[:-1]) not in ann_img_stems or
+                    '_'.join(f.stem.split('_')[:-1]) in omit_img_stems
+                ):
                     continue
 
                 attribute_idx = self.metainfo['attributes'].index(label) - 1
@@ -46,6 +56,7 @@ class ToothCropMultitaskDataset(ToothCropDataset):
                     file_attributes[f.stem] = {
                         'img_path': str(f),
                         'gt_label': [attribute_idx],
+                        'logits': stem2logits[f.stem],
                     }
 
                 i += 1
@@ -66,7 +77,7 @@ class ToothCropMultitaskDataset(ToothCropDataset):
             return data_list
         
         for data_sample in data_list:
-            number = Path(data_sample['img_path']).stem.split('_')[1][1]
+            number = Path(data_sample['img_path']).stem.split('_')[-1][1]
             number_label = int(number) - 1
             data_sample['gt_label']['Number'] = number_label
         

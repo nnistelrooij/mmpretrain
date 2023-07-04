@@ -17,11 +17,11 @@ custom_imports = dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'fdi-checkedv2'
-fold = '_diagnosis_4'
+fold = '_diagnosis_1'
 run = 0
 multilabel = False
 supervise_number = False
-data_prefix = data_root + 'images'
+data_prefix = data_root + 'crop_images2'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
 img_size = 256
 diag_drive = False
@@ -56,8 +56,11 @@ train_dataloader = dict(
                 supervise_number=supervise_number,
                 data_root=data_root,
                 data_prefix=data_prefix,
-                ann_file=ann_prefix + f'train{fold}.json',
-                pred_file='full_pred.json',
+                # ann_file=ann_prefix + f'train{fold}.json',
+                # pred_file='full_pred.json',
+                ann_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+                pred_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+                omit_file=ann_prefix + f'val{fold}.json',
                 metainfo=dict(classes=classes, attributes=attributes),
                 extend=0.1,
                 pipeline=[dict(type='LoadImageFromFile')],
@@ -92,21 +95,23 @@ val_dataloader = dict(dataset=dict(
     data_root=data_root,
     data_prefix=data_prefix,
     ann_file=ann_prefix + f'val{fold}.json',
-    pred_file='full_pred.json',
+    pred_file=ann_prefix + f'val{fold}.json' if export == 'external' else 'full_pred.json',
     metainfo=dict(classes=classes, attributes=attributes),
     extend=0.1,
     pipeline=test_pipeline,
 ))
 
 test_dataloader = dict(
-    sampler=dict(shuffle=True),
+    # sampler=dict(shuffle=True),
     dataset=dict(
         type='ToothCropMultitaskDataset',
         supervise_number=supervise_number,
         data_root=data_root,
         data_prefix=data_prefix,
         ann_file=ann_prefix + f'val{fold}.json',
-        pred_file='full_pred.json',
+        pred_file=ann_prefix + f'val{fold}.json' if export == 'external' else 'full_pred.json',
+        # ann_file=data_root + 'all_pred.json',
+        # pred_file=data_root + 'all_pred.json',
         metainfo=dict(classes=classes, attributes=attributes),
         extend=0.1,
         pipeline=test_pipeline,
@@ -131,13 +136,14 @@ val_evaluator = [
     dict(type='BinaryLabelMetric', num_classes=2, prefix='binary-label'),
 ]
 test_evaluator = val_evaluator
+# test_evaluator = []
 
 optim_wrapper = dict(
     optimizer=dict(lr=2e-4, weight_decay=0.05),
     clip_grad=dict(max_norm=5.0),
     accumulative_counts=256 // batch_size,
 )
-train_cfg = dict(max_epochs=60)
+train_cfg = dict(max_epochs=100)
 
 warmup_epochs = 5
 param_scheduler = [

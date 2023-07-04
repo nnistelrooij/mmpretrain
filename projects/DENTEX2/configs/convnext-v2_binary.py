@@ -15,13 +15,15 @@ custom_imports = dict(
         'projects.DENTEX2.datasets.transforms',
         'projects.DENTEX2.hooks.class_counts_hook',
         'projects.DENTEX2.evaluation.metrics.positive_label',
+        'projects.DENTEX2.convnext.latent_head',
+        'projects.DENTEX2.swin',
     ],
     allow_failed_imports=False,
 )
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'fdi-checkedv2'
-fold = '_diagnosis_4'
+fold = '_diagnosis_1'
 run = 1
 multilabel = False
 data_prefix = data_root + 'images'
@@ -62,9 +64,12 @@ train_dataloader = dict(
         dataset=dict(
             type='ToothCropDataset',
             data_root=data_root,
-            data_prefix=data_prefix,
-            ann_file=ann_prefix + f'train{fold}.json',
-            pred_file='full_pred.json',
+            data_prefix=data_prefix.replace('images', 'crop_images2'),
+            # ann_file=ann_prefix + f'train{fold}.json',
+            # pred_file='logits_pred.json',
+            ann_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+            pred_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+            omit_file=ann_prefix + f'val{fold}.json',
             metainfo=dict(classes=classes, attributes=attributes),
             extend=0.1,
             pipeline=[dict(type='LoadImageFromFile')],
@@ -79,7 +84,10 @@ train_dataloader = dict(
             dict(type='NNUNetSpatialIntensityAugmentations'),
             # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
             dict(type='RandomFlip', prob=0.5, direction='horizontal'),
-            dict(type='PackInputs'),
+            dict(type='PackInputs', meta_keys=(
+                'sample_idx', 'img_path', 'ori_shape', 'img_shape',
+                'scale_factor', 'flip', 'flip_direction', 'logits',
+            )),
         ],
     ),
 )
@@ -93,7 +101,10 @@ test_pipeline = [
         backend='pillow',
         interpolation='bicubic'),
     dict(type='CenterCrop', crop_size=img_size),
-    dict(type='PackInputs')
+    dict(type='PackInputs', meta_keys=(
+        'sample_idx', 'img_path', 'ori_shape', 'img_shape',
+        'scale_factor', 'flip', 'flip_direction', 'logits',
+    )),
 ]
 val_dataloader = dict(dataset=dict(
     type='ToothCropDataset',
@@ -121,11 +132,13 @@ data_preprocessor = dict(num_classes=2)
 model = dict(
     data_preprocessor=(
         dict(
+            type='LatentDataPreprocessor',
             mean=[115.69932057, 115.69932057, 16.6501554],
             std=[45.12872729, 45.12872729, 62.99652334],
-        ) if pretrain_checkpoint else dict()
+        ) if pretrain_checkpoint else dict(type='LatentDataPreprocessor')
     ),
     backbone=dict(
+        type='LatentSwinTransformer',
         **(dict(init_cfg=dict(
             type='Pretrained', 
             checkpoint=pretrain_checkpoint,
@@ -135,8 +148,11 @@ model = dict(
         drop_path_rate=0.8,
         img_size=img_size,
     ),
+    neck=None,
     head=dict(
+        type='LatentLinearClsHead',
         num_classes=2,
+        num_latents=0,
         loss=dict(_delete_=True, type='LabelSmoothLoss', label_smooth_val=0.1),
         # loss=dict(_delete_=True, type='FocalLoss'),
     ),

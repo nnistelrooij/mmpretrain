@@ -41,6 +41,13 @@ checkpoints = [
     'work_dirs/opg_crops_fold_diagnosis_4_Impacted_1_swin/best_positive-label_auc_epoch_68.pth',
     'work_dirs/opg_crops_fold_diagnosis_4_Periapical Lesion_1_swin/best_positive-label_auc_epoch_20.pth',
 ]
+checkpoints = [
+    'work_dirs/opg_crops_fold_diagnosis_0_Caries_1_swin/epoch_80.pth',
+    'work_dirs/opg_crops_fold_diagnosis_0_Deep Caries_1_swin/epoch_80.pth',
+    'work_dirs/opg_crops_fold_diagnosis_0_Impacted_1_swin/epoch_80.pth',
+    'work_dirs/opg_crops_fold_diagnosis_0_Periapical Lesion_1_swin/epoch_80.pth',
+]
+
 
 for i, ckpt in enumerate(checkpoints):
     checkpoints[i] = '/mnt/diag/DENTEX/dentex/' + ckpt

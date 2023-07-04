@@ -92,6 +92,7 @@ class RandomToothFlip(BaseTransform):
         )
         mixed_results = {
             'gt_label': source_results['gt_label'],
+            'logits': source_results['logits'],
             'img': mixed_img,
             'img_shape': mixed_img.shape,
         }
