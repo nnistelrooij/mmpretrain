@@ -11,6 +11,7 @@ test_dataloader = dict(
         data_root='/output',
     ),
 )
+test_evaluator = []
 
 _base_.model.backbone.classifiers['Caries'].pop('pretrained')
 _base_.model.backbone.classifiers['Deep Caries'].pop('pretrained')
@@ -18,4 +19,4 @@ _base_.model.backbone.classifiers['Periapical Lesion'].pop('pretrained')
 _base_.model.backbone.classifiers['Impacted'].pop('pretrained')
 _base_.model.backbone.pop('pretrained')
 
-test_evaluator = []
+log_level = 'WARN'

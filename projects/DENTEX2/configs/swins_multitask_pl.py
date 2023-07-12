@@ -5,7 +5,9 @@ custom_imports = dict(
     imports=[
         'projects.DENTEX2.datasets',
         'projects.DENTEX2.datasets.transforms.processing',
+        'projects.DENTEX2.datasets.samplers.class_aware_sampler',
         'projects.DENTEX2.mlp',
+        'projects.DENTEX2.models',
         'projects.DENTEX2.convnext.csra_head',
         'projects.DENTEX2.visualization.visualizer',
         'projects.DENTEX2.evaluation.metrics',
@@ -17,14 +19,23 @@ custom_imports = dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'fdi-checkedv2'
-fold = '_diagnosis_0'
+fold = '_diagnosis_4'
 run = 0
 multilabel = False
 supervise_number = False
-data_prefix = data_root + 'crop_images2'
+data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
 img_size = 256
 diag_drive = False
+
+load_from = 'work_dirs/opg_crops_fold_multitask_diagnosis_4_swins/epoch_60.pth'
+
+
+_base_.model.backbone.classifiers['Caries'].pop('pretrained')
+_base_.model.backbone.classifiers['Deep Caries'].pop('pretrained')
+_base_.model.backbone.classifiers['Periapical Lesion'].pop('pretrained')
+_base_.model.backbone.classifiers['Impacted'].pop('pretrained')
+_base_.model.backbone.pop('pretrained')
 
 classes = [
     '11', '12', '13', '14', '15', '16', '17', '18',
@@ -42,38 +53,70 @@ attributes = [
 # classes = attributes
 
 woll = dict(type='PackMultiTaskInputs', multi_task_fields=('gt_label',))
+img_size = 256
+train_pipeline = [
+    dict(type='RandomToothFlip', prob=0.1),
+    dict(type='RandomResizedClassPreservingCrop', scale=img_size),
+    # dict(type='SeparateOPGMask'),
+    dict(type='NNUNetSpatialIntensityAugmentations'),
+    # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
+    dict(type='RandomFlip', prob=0.5, direction='horizontal'),
+    woll,
+]
+
 batch_size = 128
 train_dataloader = dict(
     batch_size=batch_size,
+    sampler=dict(
+        _delete_=True,
+        type='UnlabeledLabeledSampler',
+        sampler='DefaultSampler',
+        unlabeled_batches=50,
+        batch_size=batch_size,
+        shuffle=True,
+    ),
     dataset=dict(
         _delete_=True,
-        type='ClassBalancedDataset',
-        oversample_thr=0.1,
-        dataset=dict(
-            type='MultiImageMixDataset',
+        type='LabeledUnlabeledDatasets',
+        labeled_dataset=dict(
+            type='ClassBalancedDataset',
+            oversample_thr=0.1,
             dataset=dict(
-                type='ToothCropMultitaskDataset',
-                supervise_number=supervise_number,
-                data_root=data_root,
-                data_prefix=data_prefix,
-                # ann_file=ann_prefix + f'train{fold}.json',
-                # pred_file='full_pred.json',
-                ann_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
-                pred_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
-                omit_file=ann_prefix + f'val{fold}.json',
-                metainfo=dict(classes=classes, attributes=attributes),
-                extend=0.1,
-                pipeline=[dict(type='LoadImageFromFile')],
+                type='MultiImageMixDataset',
+                dataset=dict(
+                    type='ToothCropMultitaskDataset',
+                    supervise_number=supervise_number,
+                    data_root=data_root,
+                    data_prefix=data_prefix,
+                    ann_file=ann_prefix + f'train{fold}.json',
+                    pred_file='full_pred.json',
+                    omit_file=ann_prefix + f'val{fold}.json',
+                    metainfo=dict(classes=classes, attributes=attributes),
+                    extend=0.1,
+                    pipeline=[dict(type='LoadImageFromFile')],
+                ),
+                pipeline=train_pipeline,
             ),
-            pipeline=[                    
-                dict(type='RandomToothFlip', prob=0.1),
-                dict(type='RandomResizedClassPreservingCrop', scale=img_size),
-                # dict(type='SeparateOPGMask'),
-                dict(type='NNUNetSpatialIntensityAugmentations'),
-                # *([dict(type='MaskTooth')] if 'Caries' in attributes[-1] else []),
-                dict(type='RandomFlip', prob=0.5, direction='horizontal'),
-                woll,
-            ],
+        ),
+        unlabeled_dataset=dict(
+            type='ClassBalancedDataset',
+            oversample_thr=0.1,
+            dataset=dict(
+                type='MultiImageMixDataset',
+                dataset=dict(
+                    type='ToothCropMultitaskDataset',
+                    supervise_number=supervise_number,
+                    data_root=data_root,
+                    data_prefix=data_prefix.replace('images', 'crop_images'),
+                    ann_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+                    pred_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+                    omit_file=ann_prefix + f'val_any_diagnosis_0.json',
+                    metainfo=dict(classes=classes, attributes=attributes),
+                    extend=0.1,
+                    pipeline=[dict(type='LoadImageFromFile')],
+                ),
+                pipeline=train_pipeline,
+            ),
         ),
     ),
 )
@@ -119,6 +162,7 @@ test_dataloader = dict(
 )
 
 data_preprocessor = dict(num_classes=len(attributes) - 1)
+model = dict(type='PseudoClassifier')
 
 val_evaluator = [
     dict(
@@ -143,7 +187,7 @@ optim_wrapper = dict(
     clip_grad=dict(max_norm=5.0),
     accumulative_counts=256 // batch_size,
 )
-train_cfg = dict(max_epochs=100)
+train_cfg = dict(max_epochs=60)
 
 warmup_epochs = 5
 param_scheduler = [
@@ -167,7 +211,7 @@ param_scheduler = [
 default_hooks = dict(
     checkpoint=dict(
         max_keep_ckpts=1,        
-        save_best='binary-label/auc',
+        save_best='positive-label/f1-score',
         rule='greater',
     ),
     visualization=dict(

@@ -170,4 +170,125 @@ class MultiImageMixDataset:
 
     def get_cat_ids(self, idx: int) -> List[int]:
         return self.dataset.get_cat_ids(idx)
+
+
+@DATASETS.register_module()
+class LabeledUnlabeledDatasets():
+
+    def __init__(
+        self,
+        labeled_dataset: Union[BaseDataset, dict],
+        unlabeled_dataset: Union[BaseDataset, dict],
+        skip_type_keys: Union[Sequence[str], None] = None,
+        max_refetch: int=15,
+        lazy_init: bool=False,
+    ) -> None:    
+        if skip_type_keys is not None:
+            assert all([
+                isinstance(skip_type_key, str)
+                for skip_type_key in skip_type_keys
+            ])
+        self._skip_type_keys = skip_type_keys
+
+        self.labeled_dataset: BaseDataset
+        if isinstance(labeled_dataset, dict):
+            self.labeled_dataset = DATASETS.build(labeled_dataset)
+        elif isinstance(labeled_dataset, BaseDataset):
+            self.labeled_dataset = labeled_dataset
+        else:
+            raise TypeError(
+                'elements in datasets sequence should be config or '
+                f'`BaseDataset` instance, but got {type(labeled_dataset)}')
+
+        self.unlabeled_dataset: BaseDataset
+        if isinstance(unlabeled_dataset, dict):
+            self.unlabeled_dataset = DATASETS.build(unlabeled_dataset)
+        elif isinstance(unlabeled_dataset, BaseDataset):
+            self.unlabeled_dataset = unlabeled_dataset
+        else:
+            raise TypeError(
+                'elements in datasets sequence should be config or '
+                f'`BaseDataset` instance, but got {type(unlabeled_dataset)}')
+
+        self._metainfo = self.labeled_dataset.metainfo
+        if hasattr(self.labeled_dataset, 'flag'):
+            self.flag = self.labeled_dataset.flag
+        self.num_samples = len(self.labeled_dataset) + len(self.unlabeled_dataset)
+        self.max_refetch = max_refetch
+
+        self._fully_initialized = False
+        if not lazy_init:
+            self.full_init()
+
+    @property
+    def metainfo(self) -> dict:
+        """Get the meta information of the multi-image-mixed dataset.
+
+        Returns:
+            dict: The meta information of multi-image-mixed dataset.
+        """
+        return copy.deepcopy(self._metainfo)
+
+    def full_init(self):
+        """Loop to ``full_init`` each dataset."""
+        if self._fully_initialized:
+            return
+
+        self.labeled_dataset.full_init()
+        self.unlabeled_dataset.full_init()
+        self._ori_len = len(self.labeled_dataset) + len(self.unlabeled_dataset)
+        self._fully_initialized = True
+
+    @force_full_init
+    def get_data_info(self, idx: int) -> dict:
+        """Get annotation by index.
+
+        Args:
+            idx (int): Global index of ``ConcatDataset``.
+
+        Returns:
+            dict: The idx-th annotation of the datasets.
+        """
+        if idx < len(self.labeled_dataset):
+            return self.labeled_dataset.get_data_info(idx)
+        
+        idx -= len(self.labeled_dataset)
+        return self.unlabeled_dataset.get_data_info(idx)
     
+    @force_full_init
+    def __len__(self):
+        return self.num_samples
+
+    def update_skip_type_keys(self, skip_type_keys):
+        """Update skip_type_keys. It is called by an external hook.
+
+        Args:
+            skip_type_keys (list[str], optional): Sequence of type
+                string to be skip pipeline.
+        """
+        assert all([
+            isinstance(skip_type_key, str) for skip_type_key in skip_type_keys
+        ])
+        self._skip_type_keys = skip_type_keys    
+
+    def __getitem__(self, idx):
+        if idx < len(self.labeled_dataset):
+            results = copy.deepcopy(self.labeled_dataset[idx])
+            labeled = True
+        else:
+            idx -= len(self.labeled_dataset)
+            results = copy.deepcopy(self.unlabeled_dataset[idx])
+            labeled = False
+
+        results['data_samples'].set_field(
+            labeled, 'labeled', field_type='metainfo',
+        )
+
+        return results
+
+    def get_cat_ids(self, idx: int) -> List[int]:
+        if idx < len(self.labeled_dataset):
+            return self.labeled_dataset.get_cat_ids(idx)
+        
+        idx -= len(self.labeled_dataset)
+        return self.unlabeled_dataset.get_cat_ids(idx)

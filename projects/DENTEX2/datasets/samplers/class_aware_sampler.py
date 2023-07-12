@@ -190,3 +190,59 @@ class RandomCycleIter:
         idx = self.data[self.index[self.i]]
         self.i += 1
         return idx
+
+
+@DATA_SAMPLERS.register_module(force=True)
+class UnlabeledLabeledSampler(Sampler):
+
+    def __init__(
+        self,
+        unlabeled_batches: int,
+        batch_size: int,
+        sampler: str,
+        dataset,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(None)
+
+        labeled_cfg = dict(
+            type=sampler,
+            dataset=dataset.labeled_dataset,
+            *args, **kwargs,
+        )
+        self.labeled_sampler = DATA_SAMPLERS.build(labeled_cfg)
+
+        unlabeled_cfg = dict(
+            type=sampler,
+            dataset=dataset.unlabeled_dataset,
+            *args, **kwargs,
+        )
+        self.unlabeled_sampler = DATA_SAMPLERS.build(unlabeled_cfg)
+
+        self.unlabeled_images = unlabeled_batches * batch_size
+        self.unlabeled_idxs = None
+        self.sample_labeled = False
+
+    def __iter__(self) -> Iterator[int]:
+        if self.sample_labeled:
+            self.sample_labeled = False
+
+            return self.labeled_sampler.__iter__()
+        
+        if (
+            self.unlabeled_idxs is None or
+            len(self.unlabeled_idxs) < self.unlabeled_images
+        ):
+            self.unlabeled_idxs = list(self.unlabeled_sampler.__iter__())
+
+        idxs = self.unlabeled_idxs[:self.unlabeled_images]
+        idxs = [idx + len(self.labeled_sampler.dataset) for idx in idxs]
+
+        self.unlabeled_idxs = self.unlabeled_idxs[self.unlabeled_images:]
+        self.sample_labeled = True
+        
+        return iter(idxs)
+
+    def __len__(self) -> int:
+        return len(self.labeled_sampler.dataset) + len(self.unlabeled_sampler.dataset)

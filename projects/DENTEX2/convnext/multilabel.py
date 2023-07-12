@@ -86,7 +86,7 @@ class MultilabelConvNeXts(nn.Module):
         return binary_logits, binary_feats
 
     def forward(self, x):
-        if not self.full_init and self.training:
+        if not self.full_init and self.training and self.pretrained:
             self._init_pretrained()
             self.full_init = True
 

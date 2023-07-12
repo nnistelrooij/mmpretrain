@@ -1,9 +1,9 @@
 from collections import defaultdict
 from functools import partial
-from multiprocessing import Pool
+from multiprocessing import cpu_count, Pool
 from pathlib import Path
 import re
-from typing import Dict, Tuple
+from typing import Dict
 
 import cv2
 import numpy as np
@@ -27,7 +27,12 @@ def compute_iou(polys1, polys2, h, w):
     d = [convert(poly, h, w) for poly in polys1]
     g = [convert(poly, h, w) for poly in polys2]
 
-    return maskUtils.iou(d, g, [0]*len(g))
+    ious = maskUtils.iou(d, g, [0]*len(g))
+
+    if isinstance(ious, list):
+        ious = np.zeros((0, 0))
+
+    return ious
 
 
 @DATASETS.register_module()
@@ -107,7 +112,10 @@ class ToothCropDataset(CustomDataset):
         label_path = Path(self.img_prefix) / attribute
         label_path.mkdir(parents=True, exist_ok=True)
 
-        out_file = label_path / f'{img_path.stem}_{fdi_label}.png'
+        out_files = sorted(label_path.glob(f'{img_path.stem}_{fdi_label}*'))
+        fdi_idx = int(out_files[-1].stem[-1]) + 1 if out_files else 0
+        out_file = label_path / f'{img_path.stem}_{fdi_label}-{fdi_idx}.png'
+
         if img_crop is not None:
             cv2.imwrite(str(out_file), img_crop)
 
@@ -120,10 +128,10 @@ class ToothCropDataset(CustomDataset):
         saved_img_stems,
         img_dict,
         score_thrs={
-            'Caries': (0.1, 0.8),
-            'Deep Caries': (0.1, 0.8),
-            'Periapical Lesion': (0.1, 0.9),
-            'Impacted': (0.1, 0.8),
+            'Caries': (0.8, 0.8),
+            'Deep Caries': (0.8, 0.8),
+            'Periapical Lesion': (0.9, 0.9),
+            'Impacted': (0.8, 0.8),
         }
     ):
         stem2logits = defaultdict(int)
@@ -135,7 +143,7 @@ class ToothCropDataset(CustomDataset):
         gt = gt_coco.imgToAnns[img_dict['id']]
         preds = pred_coco.imgToAnns[img_dict['id']]
         if not preds:
-            return
+            return stem2logits
 
         ious = compute_iou(preds, gt, img_dict['height'], img_dict['width'])
         for poly, ious in zip(gt, ious.T):
@@ -195,13 +203,13 @@ class ToothCropDataset(CustomDataset):
         ])
         
         stem2logits = defaultdict(int)
-        p = Pool(8)
-        iterator = p.imap_unordered(
-            func=partial(self.crop_tooth_diagnosis_single, gt_coco, pred_coco, saved_img_stems),
-            iterable=gt_coco.dataset['images'],
-        )
-        for logits_dict in tqdm(iterator, total=len(gt_coco.imgs)):
-            stem2logits.update(logits_dict)
+        with Pool(8) as p:
+            iterator = p.imap_unordered(
+                func=partial(self.crop_tooth_diagnosis_single, gt_coco, pred_coco, saved_img_stems),
+                iterable=gt_coco.imgs.values(),
+            )
+            for logits_dict in tqdm(iterator, total=len(gt_coco.imgs)):
+                stem2logits.update(logits_dict)
 
         return stem2logits
 
@@ -256,13 +264,13 @@ class ToothCropDataset(CustomDataset):
         gt_coco = COCO(self.ann_file)
         pred_coco = COCO(self.pred_file)
 
-        # stem2logits = self.crop_tooth_diagnosis(gt_coco, pred_coco)
-        stem2logits = defaultdict(int)
+        stem2logits = self.crop_tooth_diagnosis(gt_coco, pred_coco)
+        # stem2logits = defaultdict(int)
         data_list = self.load_annotations(stem2logits, gt_coco)
 
         self.fdi2idx = defaultdict(list)
         for i, d in enumerate(data_list):
-            fdi = re.split('\.|_', d['img_path'])[-2]
+            fdi = re.split('\.|_|-', d['img_path'])[-3]
             self.fdi2idx[fdi].append(i)
             
         return data_list
