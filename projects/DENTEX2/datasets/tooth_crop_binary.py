@@ -132,7 +132,8 @@ class ToothCropDataset(CustomDataset):
             'Deep Caries': (0.8, 0.8),
             'Periapical Lesion': (0.9, 0.9),
             'Impacted': (0.8, 0.8),
-        }
+        },
+        eps: float=1e-6,
     ):
         stem2logits = defaultdict(int)
         img_path = Path(self.img_prefix) / img_dict['file_name']
@@ -151,6 +152,15 @@ class ToothCropDataset(CustomDataset):
 
             if iou < self.iou_thr:
                 continue
+
+            if iou > 1 - eps:
+                for idx in np.nonzero(ious > 1 - eps)[0]:
+                    if preds[idx]['category_id'] != poly['category_id']:
+                        continue
+
+                    pred_poly = preds[idx]
+
+                assert poly['category_id'] == pred_poly['category_id'], 'mismatch'
 
             poly['segmentation'] = pred_poly['segmentation']
             fdi_label = pred_coco.cats[pred_poly['category_id']]['name']
