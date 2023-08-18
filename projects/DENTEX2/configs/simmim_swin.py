@@ -6,7 +6,6 @@ custom_imports = dict(
     imports=[
         'projects.DENTEX2.datasets',
         'projects.DENTEX2.datasets.samplers.class_aware_sampler',
-        'projects.DENTEX2.mim.swinv2_simmim',
         'projects.DENTEX2.datasets.transforms',
         # 'projects.DENTEX2.hooks.class_counts_hook',
         # 'projects.DENTEX2.evaluation.metrics.positive_label',
@@ -28,9 +27,8 @@ model=dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 # data_root = '/mnt/z/nielsvannistelrooij/dentex/darwin/'
-export = 'external'
-fold = '_clean_0'
-run = 0
+export = 'curated-odonto'
+split = 'val_dentex_diagnosis_0'
 multilabel = False
 data_prefix = data_root + 'crop_images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
@@ -58,8 +56,8 @@ train_dataloader = dict(
         type='ToothCropDataset',
         data_root=data_root,
         data_prefix=data_prefix,
-        ann_file=data_root + 'all_pred.json',
-        pred_file=data_root + 'all_pred.json',
+        ann_file='/home/mkaailab/Documents/DENTEX/dentex/pred.json',
+        pred_file='/home/mkaailab/Documents/DENTEX/dentex/pred.json',
         metainfo=dict(classes=classes, attributes=attributes),
         extend=0.1,
         pipeline=[

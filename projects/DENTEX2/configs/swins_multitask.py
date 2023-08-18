@@ -17,11 +17,11 @@ custom_imports = dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'fdi-checkedv2'
-fold = '_diagnosis_0'
+fold = '_diagnosis_4'
 run = 0
 multilabel = False
 supervise_number = False
-data_prefix = data_root + 'crop_images2'
+data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
 img_size = 256
 diag_drive = False
@@ -187,3 +187,33 @@ if diag_drive:
     work_dir = f'/mnt/diag/DENTEX/dentex/work_dirs/opg_crops_fold_multitask{fold}_swins'
 else:
     work_dir = f'work_dirs/opg_crops_fold_multitask{fold}_swins'
+
+
+
+tta_pipeline = [
+    test_pipeline[0],
+    dict(type='TestTimeAug', transforms=[
+        [
+            # dict(
+            #     type='ResizeEdge',
+            #     scale=img_size + 128,
+            #     edge='short',
+            #     backend='pillow',
+            #     interpolation='bicubic',
+            # ),
+            dict(
+                type='ResizeEdge',
+                scale=img_size + 36,
+                edge='short',
+                backend='pillow',
+                interpolation='bicubic',
+            ),
+        ],
+        [dict(type='CenterCrop', crop_size=img_size)],
+        [
+            dict(type='RandomFlip', prob=1.),
+            dict(type='RandomFlip', prob=0.)
+        ],
+        [test_pipeline[-1]],
+    ]),
+]
