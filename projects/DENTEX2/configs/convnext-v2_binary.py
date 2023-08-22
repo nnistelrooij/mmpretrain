@@ -22,20 +22,14 @@ custom_imports = dict(
 )
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
-export = 'fdi-checkedv2'
-fold = '_diagnosis_1'
-run = 1
+export = 'curated-odonto'
+fold = 'dentex_diagnosis_1'
 multilabel = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
 diag_drive = True
 
 pretrain_checkpoint = 'work_dirs/simmim_swin/epoch_100.pth'
-pretrain_checkpoint = 'work_dirs/simmim_swin/epoch_100_base.pth'
-# pretrain_checkpoint = ''
-
-if pretrain_checkpoint and diag_drive:
-    pretrain_checkpoint = '/mnt/diag/DENTEX/dentex/' + pretrain_checkpoint
 
 classes = [
     '11', '12', '13', '14', '15', '16', '17', '18',
@@ -64,12 +58,12 @@ train_dataloader = dict(
         dataset=dict(
             type='ToothCropDataset',
             data_root=data_root,
-            data_prefix=data_prefix.replace('images', 'crop_images2'),
-            # ann_file=ann_prefix + f'train{fold}.json',
-            # pred_file='logits_pred.json',
-            ann_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
-            pred_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
-            omit_file=ann_prefix + f'val{fold}.json',
+            data_prefix=data_prefix,
+            ann_file=ann_prefix + f'train_{fold}.json',
+            pred_file='pred_odo.json',
+            # ann_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+            # pred_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
+            omit_file=ann_prefix + f'val_{fold}.json',
             metainfo=dict(classes=classes, attributes=attributes),
             extend=0.1,
             pipeline=[dict(type='LoadImageFromFile')],
@@ -77,7 +71,7 @@ train_dataloader = dict(
         pipeline=[
             *(
                 (dict(type='RandomToothFlip', prob=0.1),)
-                if attributes[-1] != 'Impacted' else ()
+                if attributes[-1] not in ['Impacted', 'Periapical Lesion'] else ()
             ),
             dict(type='RandomResizedClassPreservingCrop', scale=img_size),
             # dict(type='SeparateOPGMask'),
@@ -110,8 +104,8 @@ val_dataloader = dict(dataset=dict(
     type='ToothCropDataset',
     data_root=data_root,
     data_prefix=data_prefix,
-    ann_file=ann_prefix + f'val{fold}.json',
-    pred_file='full_pred.json',
+    ann_file=ann_prefix + f'val_{fold}.json',
+    pred_file='pred_odo.json',
     metainfo=dict(classes=classes, attributes=attributes),
     extend=0.1,
     pipeline=test_pipeline,
@@ -121,8 +115,8 @@ test_dataloader = dict(dataset=dict(
     type='ToothCropDataset',
     data_root=data_root,
     data_prefix=data_prefix,
-    ann_file=ann_prefix + f'val{fold}.json',
-    pred_file='full_pred.json',
+    ann_file=ann_prefix + f'val_{fold}.json',
+    pred_file='pred_odo.json',
     metainfo=dict(classes=classes, attributes=attributes),
     extend=0.1,
     pipeline=test_pipeline,
@@ -133,8 +127,8 @@ model = dict(
     data_preprocessor=(
         dict(
             type='LatentDataPreprocessor',
-            mean=[115.69932057, 115.69932057, 16.6501554],
-            std=[45.12872729, 45.12872729, 62.99652334],
+            mean=[115.71165283, 115.71165283, 11.35115504],
+            std=[45.16004368, 45.16004368, 52.58988321],
         ) if pretrain_checkpoint else dict(type='LatentDataPreprocessor')
     ),
     backbone=dict(
@@ -232,6 +226,6 @@ visualizer = dict(vis_backends=[
 ])
 
 if diag_drive:
-    work_dir = f'/mnt/diag/DENTEX/dentex/work_dirs/opg_crops_fold{fold}_{attributes[-1]}_{run}_swin'
+    work_dir = f'/mnt/diag/DENTEX/dentex/work_dirs/opg_crops_fold_{fold}_{attributes[-1]}'
 else:
-    work_dir = f'work_dirs/opg_crops_fold{fold}_{attributes[-1]}_{run}_swin'
+    work_dir = f'work_dirs/opg_crops_fold_{fold}_{attributes[-1]}'

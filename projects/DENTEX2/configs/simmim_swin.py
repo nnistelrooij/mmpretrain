@@ -1,5 +1,5 @@
-# _base_ = '../../../configs/simmim/simmim_swin-base-w6_8xb256-amp-coslr-100e_in1k-192px.py'
-_base_ = '../../../configs/simmim/simmim_swin-large-w12_16xb128-amp-coslr-800e_in1k-192px.py'
+_base_ = '../../../configs/simmim/simmim_swin-base-w6_8xb256-amp-coslr-100e_in1k-192px.py'
+# _base_ = '../../../configs/simmim/simmim_swin-large-w12_16xb128-amp-coslr-800e_in1k-192px.py'
 
 
 custom_imports = dict(
@@ -16,8 +16,8 @@ custom_imports = dict(
 img_size = 192
 model=dict(    
     data_preprocessor=dict(
-        mean=[115.69932057, 115.69932057, 16.6501554],
-        std=[45.12872729, 45.12872729, 62.99652334],
+        mean=[115.71165283, 115.71165283, 11.35115504],
+        std=[45.16004368, 45.16004368, 52.58988321],
     ),
     backbone=dict(
         # type='SimMIMSwinTransformerV2',
@@ -28,9 +28,9 @@ model=dict(
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 # data_root = '/mnt/z/nielsvannistelrooij/dentex/darwin/'
 export = 'curated-odonto'
-split = 'val_dentex_diagnosis_0'
+split = 'val_all_dentex_diagnosis_0'
 multilabel = False
-data_prefix = data_root + 'crop_images'
+data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
 
 classes = [
@@ -53,27 +53,32 @@ train_dataloader = dict(
     batch_size=batch_size,
     dataset=dict(
         _delete_=True,
-        type='ToothCropDataset',
-        data_root=data_root,
-        data_prefix=data_prefix,
-        ann_file='/home/mkaailab/Documents/DENTEX/dentex/pred.json',
-        pred_file='/home/mkaailab/Documents/DENTEX/dentex/pred.json',
-        metainfo=dict(classes=classes, attributes=attributes),
-        extend=0.1,
-        pipeline=[
-            dict(type='LoadImageFromFile'),
-            dict(type='RandomResizedClassPreservingCrop', scale=img_size),
-            dict(type='NNUNetSpatialIntensityAugmentations'),
-            dict(type='RandomFlip', prob=0.5, direction='horizontal'),
-            dict(
-                type='SimMIMMaskGenerator',
-                input_size=img_size,
-                mask_patch_size=32,
-                model_patch_size=4,
-                mask_ratio=0.6,
-            ),
-            dict(type='PackInputs'),
-        ],
+        type='ClassBalancedDataset',
+        oversample_thr=0.1,
+        dataset=dict(
+            type='ToothCropDataset',
+            data_root=data_root,
+            data_prefix=data_prefix,
+            # ann_file='/home/mkaailab/Documents/DENTEX/dentex/pred.json',
+            ann_file=ann_prefix + f'{split}.json',
+            pred_file='/home/mkaailab/Documents/DENTEX/dentex/pred_odo.json',
+            metainfo=dict(classes=classes, attributes=attributes),
+            extend=0.1,
+            pipeline=[
+                dict(type='LoadImageFromFile'),
+                dict(type='RandomResizedClassPreservingCrop', scale=img_size),
+                dict(type='NNUNetSpatialIntensityAugmentations'),
+                dict(type='RandomFlip', prob=0.5, direction='horizontal'),
+                dict(
+                    type='SimMIMMaskGenerator',
+                    input_size=img_size,
+                    mask_patch_size=32,
+                    model_patch_size=4,
+                    mask_ratio=0.6,
+                ),
+                dict(type='PackInputs'),
+            ],
+        ),
     ),
 )
 
@@ -93,7 +98,7 @@ visualizer = dict(vis_backends=[
 ])
 
 default_hooks = dict(checkpoint=dict(
-    max_keep_ckpts=3,
+    max_keep_ckpts=1,
     save_best='loss',
 ))
 
@@ -118,6 +123,6 @@ param_scheduler = [
 train_cfg = dict(max_epochs=100)
 
 load_from = 'checkpoints/simmim_swin-base_16xb128-amp-coslr-800e_in1k-192_20220916-a0e931ac.pth'
-load_from = 'checkpoints/simmim_swin-large_16xb128-amp-coslr-800e_in1k-192_20220916-4ad216d3.pth'
+# load_from = 'checkpoints/simmim_swin-large_16xb128-amp-coslr-800e_in1k-192_20220916-4ad216d3.pth'
 
 work_dir = 'work_dirs/simmim_swin'

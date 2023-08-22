@@ -11,41 +11,47 @@ binary_model.train_cfg = None
 mix_features = False
 mix_outputs = True
 attributes = ['Caries', 'Deep Caries', 'Impacted', 'Periapical Lesion']
+# checkpoints = [
+#     'work_dirs/opg_crops_fold_diagnosis_0_Caries_1_swin/best_positive-label_auc_epoch_56.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_0_Deep Caries_1_swin/best_positive-label_auc_epoch_14.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_0_Impacted_1_swin/best_positive-label_auc_epoch_20.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_0_Periapical Lesion_1_swin/best_positive-label_auc_epoch_11.pth',
+# ]
+# checkpoints = [
+#     'work_dirs/opg_crops_fold_diagnosis_1_Caries_1_swin/best_positive-label_auc_epoch_76.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_1_Deep Caries_1_swin/best_positive-label_auc_epoch_32.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_1_Impacted_1_swin/best_positive-label_auc_epoch_45.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_1_Periapical Lesion_1_swin/best_positive-label_auc_epoch_19.pth',
+# ]
+# checkpoints = [
+#     'work_dirs/opg_crops_fold_diagnosis_2_Caries_1_swin/best_positive-label_auc_epoch_55.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_2_Deep Caries_1_swin/best_positive-label_auc_epoch_9.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_2_Impacted_1_swin/best_positive-label_auc_epoch_44.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_2_Periapical Lesion_1_swin/best_positive-label_auc_epoch_72.pth',
+# ]
+# checkpoints = [
+#     'work_dirs/opg_crops_fold_diagnosis_3_Caries_1_swin/best_positive-label_auc_epoch_64.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_3_Deep Caries_1_swin/best_positive-label_auc_epoch_20.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_3_Impacted_1_swin/best_positive-label_auc_epoch_37.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_3_Periapical Lesion_1_swin/best_positive-label_auc_epoch_13.pth',
+# ]
+# checkpoints = [
+#     'work_dirs/opg_crops_fold_diagnosis_4_Caries_1_swin/best_positive-label_auc_epoch_71.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_4_Deep Caries_1_swin/best_positive-label_auc_epoch_13.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_4_Impacted_1_swin/best_positive-label_auc_epoch_68.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_4_Periapical Lesion_1_swin/best_positive-label_auc_epoch_20.pth',
+# ]
+# checkpoints = [
+#     'work_dirs/opg_crops_fold_diagnosis_0_Caries_1_swin/epoch_80.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_0_Deep Caries_1_swin/epoch_80.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_0_Impacted_1_swin/epoch_80.pth',
+#     'work_dirs/opg_crops_fold_diagnosis_0_Periapical Lesion_1_swin/epoch_80.pth',
+# ]
 checkpoints = [
-    'work_dirs/opg_crops_fold_diagnosis_0_Caries_1_swin/best_positive-label_auc_epoch_56.pth',
-    'work_dirs/opg_crops_fold_diagnosis_0_Deep Caries_1_swin/best_positive-label_auc_epoch_14.pth',
-    'work_dirs/opg_crops_fold_diagnosis_0_Impacted_1_swin/best_positive-label_auc_epoch_20.pth',
-    'work_dirs/opg_crops_fold_diagnosis_0_Periapical Lesion_1_swin/best_positive-label_auc_epoch_11.pth',
-]
-checkpoints = [
-    'work_dirs/opg_crops_fold_diagnosis_1_Caries_1_swin/best_positive-label_auc_epoch_76.pth',
-    'work_dirs/opg_crops_fold_diagnosis_1_Deep Caries_1_swin/best_positive-label_auc_epoch_32.pth',
-    'work_dirs/opg_crops_fold_diagnosis_1_Impacted_1_swin/best_positive-label_auc_epoch_45.pth',
-    'work_dirs/opg_crops_fold_diagnosis_1_Periapical Lesion_1_swin/best_positive-label_auc_epoch_19.pth',
-]
-checkpoints = [
-    'work_dirs/opg_crops_fold_diagnosis_2_Caries_1_swin/best_positive-label_auc_epoch_55.pth',
-    'work_dirs/opg_crops_fold_diagnosis_2_Deep Caries_1_swin/best_positive-label_auc_epoch_9.pth',
-    'work_dirs/opg_crops_fold_diagnosis_2_Impacted_1_swin/best_positive-label_auc_epoch_44.pth',
-    'work_dirs/opg_crops_fold_diagnosis_2_Periapical Lesion_1_swin/best_positive-label_auc_epoch_72.pth',
-]
-checkpoints = [
-    'work_dirs/opg_crops_fold_diagnosis_3_Caries_1_swin/best_positive-label_auc_epoch_64.pth',
-    'work_dirs/opg_crops_fold_diagnosis_3_Deep Caries_1_swin/best_positive-label_auc_epoch_20.pth',
-    'work_dirs/opg_crops_fold_diagnosis_3_Impacted_1_swin/best_positive-label_auc_epoch_37.pth',
-    'work_dirs/opg_crops_fold_diagnosis_3_Periapical Lesion_1_swin/best_positive-label_auc_epoch_13.pth',
-]
-checkpoints = [
-    'work_dirs/opg_crops_fold_diagnosis_4_Caries_1_swin/best_positive-label_auc_epoch_71.pth',
-    'work_dirs/opg_crops_fold_diagnosis_4_Deep Caries_1_swin/best_positive-label_auc_epoch_13.pth',
-    'work_dirs/opg_crops_fold_diagnosis_4_Impacted_1_swin/best_positive-label_auc_epoch_68.pth',
-    'work_dirs/opg_crops_fold_diagnosis_4_Periapical Lesion_1_swin/best_positive-label_auc_epoch_20.pth',
-]
-checkpoints = [
-    'work_dirs/opg_crops_fold_diagnosis_0_Caries_1_swin/epoch_80.pth',
-    'work_dirs/opg_crops_fold_diagnosis_0_Deep Caries_1_swin/epoch_80.pth',
-    'work_dirs/opg_crops_fold_diagnosis_0_Impacted_1_swin/epoch_80.pth',
-    'work_dirs/opg_crops_fold_diagnosis_0_Periapical Lesion_1_swin/epoch_80.pth',
+    'work_dirs/opg_crops_folddentex_diagnosis_0_Caries_0_swin/epoch_80.pth',
+    'work_dirs/opg_crops_folddentex_diagnosis_0_Deep Caries_0_swin/epoch_80.pth',
+    'work_dirs/opg_crops_folddentex_diagnosis_0_Impacted_0_swin/epoch_80.pth',
+    'work_dirs/opg_crops_folddentex_diagnosis_0_Periapical Lesion_0_swin/epoch_80.pth',
 ]
 
 
@@ -55,8 +61,8 @@ for i, ckpt in enumerate(checkpoints):
 model = dict(
     type='ImageClassifier',
     data_preprocessor=dict(
-        mean=[115.69932057, 115.69932057, 16.6501554],
-        std=[45.12872729, 45.12872729, 62.99652334],
+        mean=[115.71165283, 115.71165283, 11.35115504],
+        std=[45.16004368, 45.16004368, 52.58988321],
     ),
     backbone=dict(
         _delete_=True,
@@ -65,7 +71,7 @@ model = dict(
             attr: {**binary_model, 'pretrained': checkpoint}
             for attr, checkpoint in zip(attributes, checkpoints)
         },
-        pretrained='/mnt/diag/DENTEX/dentex/work_dirs/simmim_swin/epoch_100_base.pth',
+        pretrained='work_dirs/simmim_swin/epoch_100.pth',
         mix_features=mix_features,
         mix_outputs=mix_outputs,
     ),
@@ -93,8 +99,8 @@ model = dict(
 tta_model = dict(
     type='AverageClsScoreTTA',
     data_preprocessor=dict(
-        mean=[115.69932057, 115.69932057, 16.6501554],
-        std=[45.12872729, 45.12872729, 62.99652334],
+        mean=[115.71165283, 115.71165283, 11.35115504],
+        std=[45.16004368, 45.16004368, 52.58988321],
     ),
 )
 tta_pipeline = [

@@ -1,5 +1,6 @@
 from collections import defaultdict
 from functools import partial
+import json
 from multiprocessing import cpu_count, Pool
 from pathlib import Path
 import re
@@ -23,9 +24,13 @@ def convert(poly, h, w):
 
 
 
-def compute_iou(polys1, polys2, h, w):
-    d = [convert(poly, h, w) for poly in polys1]
-    g = [convert(poly, h, w) for poly in polys2]
+def compute_iou(polys1, polys2, h, w, iou_type):
+    if iou_type == 'segm':
+        d = [convert(poly, h, w) for poly in polys1]
+        g = [convert(poly, h, w) for poly in polys2]
+    elif iou_type == 'bbox':
+        d = np.stack([poly['bbox'] for poly in polys1])
+        g = np.stack([poly['bbox'] for poly in polys2])
 
     ious = maskUtils.iou(d, g, [0]*len(g))
 
@@ -44,6 +49,7 @@ class ToothCropDataset(CustomDataset):
         pred_file: str,
         omit_file: str='',
         iou_thr: float=0.25,
+        iou_type: str='segm',
         segm_channel: bool=True,
         mask_tooth: bool=False,
         *args, **kwargs,
@@ -52,6 +58,7 @@ class ToothCropDataset(CustomDataset):
         self.pred_file = pred_file
         self.omit_file = omit_file
         self.iou_thr = iou_thr
+        self.iou_type = iou_type
         self.segm_channel = segm_channel
         self.mask_tooth = mask_tooth
 
@@ -116,6 +123,9 @@ class ToothCropDataset(CustomDataset):
         fdi_idx = int(out_files[-1].stem[-1]) + 1 if out_files else 0
         out_file = label_path / f'{img_path.stem}_{fdi_label}-{fdi_idx}.png'
 
+        if out_file.name == '1_16-0.png':
+            k = 3
+
         if img_crop is not None:
             cv2.imwrite(str(out_file), img_crop)
 
@@ -144,14 +154,24 @@ class ToothCropDataset(CustomDataset):
         gt = gt_coco.imgToAnns[img_dict['id']]
         preds = pred_coco.imgToAnns[img_dict['id']]
         if not preds:
-            return stem2logits
+            return stem2logits, None
 
-        ious = compute_iou(preds, gt, img_dict['height'], img_dict['width'])
+        ious = compute_iou(
+            preds, gt, img_dict['height'], img_dict['width'], self.iou_type,
+        )
+        pred_polys = preds
         for poly, ious in zip(gt, ious.T):
             pred_poly, iou = preds[ious.argmax()], ious.max()
 
-            if iou < self.iou_thr:
+            if len(gt_coco.cats[poly['category_id']]['name']) == 1:
                 continue
+            
+            if iou < self.iou_thr:
+                pred_polys = None
+                continue
+
+            if 'extra' in poly and 'attributes' in poly['extra']:
+                pred_poly['extra']['attributes'] = poly['extra']['attributes']
 
             if iou > 1 - eps:
                 for idx in np.nonzero(ious > 1 - eps)[0]:
@@ -200,7 +220,7 @@ class ToothCropDataset(CustomDataset):
             ):
                 self.save_tooth_diagnosis(img_path, img_crop, fdi_label, 'Control')
 
-        return stem2logits
+        return stem2logits, pred_polys
 
     def crop_tooth_diagnosis(
         self,
@@ -211,6 +231,8 @@ class ToothCropDataset(CustomDataset):
             '_'.join(f.stem.split('_')[:-1])
             for f in Path(self.img_prefix).glob('*/*.png')
         ])
+
+        pred_img_anns = []
         
         stem2logits = defaultdict(int)
         with Pool(8) as p:
@@ -218,8 +240,19 @@ class ToothCropDataset(CustomDataset):
                 func=partial(self.crop_tooth_diagnosis_single, gt_coco, pred_coco, saved_img_stems),
                 iterable=gt_coco.imgs.values(),
             )
-            for logits_dict in tqdm(iterator, total=len(gt_coco.imgs)):
+            for logits_dict, pred_anns in tqdm(iterator, total=len(gt_coco.imgs)):
                 stem2logits.update(logits_dict)
+                pred_img_anns.append(pred_anns)
+
+        coco_dict = {
+            'images': [img for img, img_anns in zip(gt_coco.imgs.values(), pred_img_anns) if img_anns is not None],
+            'categories': list(pred_coco.cats.values()),
+        }
+        pred_img_anns = [img_anns for img_anns in pred_img_anns if img_anns is not None]
+        coco_dict['annotations'] = [ann for img_anns in pred_img_anns for ann in img_anns]
+        
+        with open('pred_odo_diagnoses.json', 'w') as f:
+            json.dump(coco_dict, f, indent=2)
 
         return stem2logits
 
