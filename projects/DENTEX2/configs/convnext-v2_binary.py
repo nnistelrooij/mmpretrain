@@ -23,7 +23,7 @@ custom_imports = dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'curated-odonto'
-fold = 'dentex_diagnosis_1'
+fold = 'dentex_diagnosis_3'
 multilabel = False
 data_prefix = data_root + 'images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
@@ -41,8 +41,8 @@ attributes = [
     'Control',
     # 'Caries',
     # 'Deep Caries',
-    # 'Impacted',
-    'Periapical Lesion',
+    'Impacted',
+    # 'Periapical Lesion',
 ]
 # classes = attributes
 

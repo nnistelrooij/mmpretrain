@@ -17,7 +17,7 @@ custom_imports = dict(
 
 data_root = '/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/'
 export = 'curated-odonto'
-fold = 'dentex_diagnosis_notest_0'
+fold = f'dentex_diagnosis_{_base_.fold}'
 run = 0
 multilabel = False
 supervise_number = False
@@ -108,8 +108,9 @@ test_dataloader = dict(
         supervise_number=supervise_number,
         data_root=data_root,
         data_prefix=data_prefix,
-        ann_file=ann_prefix + f'val_{fold}.json',
-        pred_file=ann_prefix + f'val_{fold}.json' if export == 'external' else 'pred_odo.json',
+        # ann_file=ann_prefix + f'test_{fold[:-2]}.json',
+        ann_file=ann_prefix + 'val_all_dentex_0.json',
+        pred_file=ann_prefix + f'test_{fold[:-2]}.json' if export == 'external' else 'pred_odo.json',
         # ann_file='/home/mkaailab/Documents/DENTEX/dentex/test/895.json',
         # pred_file=data_root + 'all_pred.json',
         metainfo=dict(classes=classes, attributes=attributes),
@@ -186,7 +187,7 @@ visualizer = dict(
 if diag_drive:
     work_dir = f'/mnt/diag/DENTEX/dentex/work_dirs/opg_crops_fold_multitask{fold}_swins'
 else:
-    work_dir = f'work_dirs/opg_crops_fold_multitask{fold}_swins'
+    work_dir = f'work_dirs/opg_crops_fold_multitask_{fold}_swins'
 
 
 

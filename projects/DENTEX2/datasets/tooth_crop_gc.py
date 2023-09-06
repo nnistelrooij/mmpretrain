@@ -11,6 +11,7 @@ import pycocotools.mask as maskUtils
 import SimpleITK
 from tqdm import tqdm
 
+from mmengine import MMLogger
 from mmengine.dataset.base_dataset import force_full_init
 from mmengine.logging import MMLogger
 from mmpretrain.datasets import CustomDataset
@@ -21,8 +22,17 @@ from mmpretrain.registry import DATASETS
 @DATASETS.register_module()
 class ToothCropGCDataset(CustomDataset):
 
+    def __init__(
+        self,
+        mha_meta_file: str,
+        *args,
+        **kwargs,
+    ):        
+        self.mha_meta_file = mha_meta_file
+        super().__init__(*args, **kwargs)
+
     def load_images(self):
-        df = pd.read_csv('/opt/algorithm/test.csv')
+        df = pd.read_csv(self.mha_meta_file)
         df['idx'] = df['file_name'].apply(lambda fn: int(re.split('\.|_', fn)[-2]))
         df = df.sort_values(by='idx')
         df = df.reset_index(drop=True)
@@ -80,7 +90,7 @@ class ToothCropGCDataset(CustomDataset):
             for data_items in tqdm(iterator, total=len(images)):
                 data_list.extend(data_items)
 
-        MMLogger.get_current_instance().warning('Images loaded')
+        MMLogger.get_current_instance().warning(f'{len(data_list)} images loaded')
             
         return data_list    
         

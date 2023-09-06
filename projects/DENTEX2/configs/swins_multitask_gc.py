@@ -8,6 +8,7 @@ test_dataloader = dict(
         _delete_=True,
         type='ToothCropGCDataset',
         ann_file='/output/pred.json',
+        mha_meta_file='/opt/algorithm/val.csv',
         data_prefix='/output',
         data_root='/output',
         metainfo=dict(classes=_base_.classes, attributes=_base_.attributes),
