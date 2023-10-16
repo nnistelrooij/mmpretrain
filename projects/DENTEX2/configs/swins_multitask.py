@@ -21,7 +21,7 @@ fold = f'dentex_diagnosis_{_base_.fold}'
 run = 0
 multilabel = False
 supervise_number = False
-data_prefix = data_root + 'images'
+data_prefix = '/media/mkaailab/0f60fa6e-26fa-4b42-b0c9-f0ba487553a4/home/mkaailab/.darwin/datasets/mucoaid/dentexv2/images'
 ann_prefix = data_root + f'releases/{export}/other_formats/coco/'
 img_size = 256
 diag_drive = False
@@ -56,11 +56,12 @@ train_dataloader = dict(
                 supervise_number=supervise_number,
                 data_root=data_root,
                 data_prefix=data_prefix,
-                ann_file=ann_prefix + f'train_{fold}.json',
+                # ann_file=ann_prefix + f'train_{fold}.json',
+                ann_file=ann_prefix + 'output.json',
                 pred_file='pred_odo.json',
                 # ann_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
                 # pred_file='/home/mkaailab/Documents/DENTEX/dentex/diagnosis_all.json',
-                omit_file=ann_prefix + f'val_{fold}.json',
+                # omit_file=ann_prefix + f'val_{fold}.json',
                 metainfo=dict(classes=classes, attributes=attributes),
                 extend=0.1,
                 pipeline=[dict(type='LoadImageFromFile')],

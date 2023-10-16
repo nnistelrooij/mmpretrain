@@ -4,6 +4,7 @@ from multiprocessing import Pool
 from pathlib import Path
 import re
 
+import cv2
 import numpy as np
 import pandas as pd
 from pycocotools.coco import COCO
@@ -166,3 +167,18 @@ class ToothCropGCDataset(CustomDataset):
             data_info['sample_idx'] = len(self) + idx
 
         return data_info
+    
+
+@DATASETS.register_module()
+class ToothCropPNGsDataset(ToothCropGCDataset):
+
+    def load_images(self):
+        file_paths = sorted(Path(self.data_prefix['img_path']).glob('*.png'))
+        
+        images = {}
+        for img_id, file_path in enumerate(file_paths, 1):
+            img = cv2.imread(str(file_path))
+            images[img_id] = img
+            
+        return images
+    
