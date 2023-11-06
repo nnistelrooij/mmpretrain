@@ -1,0 +1,1 @@
+from projects.DENTEX2.hooks.class_counts_hook import ClassCountsHook
