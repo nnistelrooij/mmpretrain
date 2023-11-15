@@ -52,8 +52,12 @@ class ToothCropDataset(CustomDataset):
         iou_type: str='segm',
         segm_channel: bool=True,
         mask_tooth: bool=False,
+        num_workers: int=0,
         *args, **kwargs,
     ):
+        assert iou_type == 'segm' or not segm_channel
+        assert iou_type == 'segm' or not mask_tooth
+
         self.extend = extend
         self.pred_file = pred_file
         self.omit_file = omit_file
@@ -61,17 +65,21 @@ class ToothCropDataset(CustomDataset):
         self.iou_type = iou_type
         self.segm_channel = segm_channel
         self.mask_tooth = mask_tooth
+        self.num_workers = num_workers
 
         super().__init__(*args, **kwargs)
 
     def crop_tooth(self, img, poly):
-        height, width, _ = img.shape
+        height, width = img.shape[:2]
 
         # translate bbox to xyxy
-        rle = poly['segmentation']
-        if 'size' not in rle:
-            rle = maskUtils.frPyObjects(rle, height, width)
-        bbox = maskUtils.toBbox(rle)
+        if self.iou_type == 'segm':
+            rle = poly['segmentation']
+            if 'size' not in rle:
+                rle = maskUtils.frPyObjects(rle, height, width)
+            bbox = maskUtils.toBbox(rle)
+        else:
+            bbox = poly['bbox']
         bbox = [
             poly['bbox'][0],
             poly['bbox'][1],
@@ -93,11 +101,9 @@ class ToothCropDataset(CustomDataset):
             slice(int(bbox[0]), int(bbox[2]) + 1)
         )
 
-        # determine binary mask of object in image
-        mask = maskUtils.decode([rle]).astype(bool)
-
         # add extra channel of tooth segmentation
         if self.segm_channel:
+            mask = maskUtils.decode([rle]).astype(bool)
             img = np.dstack((
                 img[..., 0],
                 img[..., 0],
@@ -106,6 +112,7 @@ class ToothCropDataset(CustomDataset):
 
         # only keep tooth in tooth crop image
         if self.mask_tooth:
+            mask = maskUtils.decode([rle]).astype(bool)
             mask = mask[..., None] if mask.ndim == 2 else mask
             mask = np.repeat(mask, 3, axis=2).astype(bool)
             img[~mask] = 0
@@ -122,9 +129,6 @@ class ToothCropDataset(CustomDataset):
         out_files = sorted(label_path.glob(f'{img_path.stem}_{fdi_label}*'))
         fdi_idx = int(out_files[-1].stem[-1]) + 1 if out_files else 0
         out_file = label_path / f'{img_path.stem}_{fdi_label}-{fdi_idx}.png'
-
-        if out_file.name == '1_16-0.png':
-            k = 3
 
         if img_crop is not None:
             cv2.imwrite(str(out_file), img_crop)
@@ -163,9 +167,11 @@ class ToothCropDataset(CustomDataset):
         for poly, ious in zip(gt, ious.T):
             pred_poly, iou = preds[ious.argmax()], ious.max()
 
+            # exclude quadrant ground-truth annotations
             if len(gt_coco.cats[poly['category_id']]['name']) == 1:
                 continue
             
+            # exclude non-overlapping predictions
             if iou < self.iou_thr:
                 pred_polys = None
                 continue
@@ -173,6 +179,7 @@ class ToothCropDataset(CustomDataset):
             if 'extra' in poly and 'attributes' in poly['extra']:
                 pred_poly['extra']['attributes'] = poly['extra']['attributes']
 
+            # in case of duplicate predictions, pick class of ground truth
             if iou > 1 - eps:
                 for idx in np.nonzero(ious > 1 - eps)[0]:
                     if preds[idx]['category_id'] != poly['category_id']:
@@ -182,7 +189,8 @@ class ToothCropDataset(CustomDataset):
 
                 assert poly['category_id'] == pred_poly['category_id'], 'mismatch'
 
-            poly['segmentation'] = pred_poly['segmentation']
+            if self.iou_type == 'segm':
+                poly['segmentation'] = pred_poly['segmentation']
             fdi_label = pred_coco.cats[pred_poly['category_id']]['name']
 
             img_crop = (
@@ -203,12 +211,15 @@ class ToothCropDataset(CustomDataset):
             if (
                 'extra' not in poly or
                 'attributes' not in poly['extra'] or
-                len(poly['extra']['attributes']) == 0
+                not any(attr in self.metainfo['classes'] for attr in poly['extra']['attributes'])
             ):
-                self.save_tooth_diagnosis(img_path, img_crop, fdi_label, 'Control')
+                self.save_tooth_diagnosis(img_path, img_crop, fdi_label, self.metainfo['classes'][0])
                 continue
             
             for i, attribute in enumerate(poly['extra']['attributes']):
+                if attribute not in self.metainfo['classes']:
+                    continue
+
                 if 'scores' in poly['extra'] and poly['extra']['scores'][i] < score_thrs[attribute][1]:
                     continue
 
@@ -218,7 +229,7 @@ class ToothCropDataset(CustomDataset):
                 'scores' in poly['extra'] and
                 all(score < score_thrs[attr][0] for attr, score in zip(*poly['extra'].values()))
             ):
-                self.save_tooth_diagnosis(img_path, img_crop, fdi_label, 'Control')
+                self.save_tooth_diagnosis(img_path, img_crop, fdi_label, self.metainfo['classes'][0])
 
         return stem2logits, pred_polys
 
@@ -232,21 +243,29 @@ class ToothCropDataset(CustomDataset):
             for f in Path(self.img_prefix).glob('*/*.png')
         ])
 
-        pred_img_anns = []
-        
         stem2logits = defaultdict(int)
-        with Pool(8) as p:
-            iterator = p.imap_unordered(
-                func=partial(self.crop_tooth_diagnosis_single, gt_coco, pred_coco, saved_img_stems),
-                iterable=gt_coco.imgs.values(),
-            )
-            for logits_dict, pred_anns in tqdm(iterator, total=len(gt_coco.imgs)):
+        pred_img_anns = []
+        if not self.num_workers:
+            for img_dict in tqdm(list(gt_coco.imgs.values())):
+                logits_dict, pred_anns = self.crop_tooth_diagnosis_single(
+                    gt_coco, pred_coco, saved_img_stems, img_dict,
+                )
                 stem2logits.update(logits_dict)
                 pred_img_anns.append(pred_anns)
+        else:        
+            with Pool(self.num_workers) as p:
+                iterator = p.imap_unordered(
+                    func=partial(self.crop_tooth_diagnosis_single, gt_coco, pred_coco, saved_img_stems),
+                    iterable=gt_coco.imgs.values(),
+                )
+                for logits_dict, pred_anns in tqdm(iterator, total=len(gt_coco.imgs)):
+                    stem2logits.update(logits_dict)
+                    pred_img_anns.append(pred_anns)
 
         coco_dict = {
             'images': [img for img, img_anns in zip(gt_coco.imgs.values(), pred_img_anns) if img_anns is not None],
             'categories': list(pred_coco.cats.values()),
+            'tag_categories': pred_coco.dataset['tag_categories'],
         }
         pred_img_anns = [img_anns for img_anns in pred_img_anns if img_anns is not None]
         coco_dict['annotations'] = [ann for img_anns in pred_img_anns for ann in img_anns]
@@ -269,11 +288,11 @@ class ToothCropDataset(CustomDataset):
         data_list = []
         img_paths = set()
         num_images = float('inf')
-        for label in self.metainfo['attributes'][::-1]:
+        for label in self.metainfo['classes']:
             label_path = Path(self.img_prefix) / label
             img_files = sorted(label_path.glob('*'))
 
-            gt_label = min(1, self.metainfo['attributes'].index(label))
+            gt_label = self.metainfo['classes'].index(label)
             i = 0
             for f in img_files:
                 if balance and i == num_images:
