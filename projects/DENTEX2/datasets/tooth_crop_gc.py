@@ -173,12 +173,31 @@ class ToothCropGCDataset(CustomDataset):
 class ToothCropPNGsDataset(ToothCropGCDataset):
 
     def load_images(self):
-        file_paths = sorted(Path(self.data_prefix['img_path']).glob('*.png'))
+        file_paths = sorted(Path(self.data_prefix['img_path']).glob('**/*.png'))
+        file_paths += sorted(Path(self.data_prefix['img_path']).glob('**/*.jpg'))
         
         images = {}
-        for img_id, file_path in enumerate(file_paths, 1):
+        for file_path in file_paths:
             img = cv2.imread(str(file_path))
-            images[img_id] = img
+            images[file_path] = img
             
         return images
     
+    def load_data_list(self):
+        MMLogger.get_current_instance().warning('loading images...')
+        images = self.load_images()
+
+        data_list = []
+        for i, (file_path, img) in enumerate(images.items(), 1):
+            image = {
+                'ori_shape': img.shape[:2],
+                'img_shape': img.shape[:2],
+                'img_id': i,
+                'img': img,
+                'img_path': file_path.as_posix()
+            }
+            data_list.append(image)
+
+        MMLogger.get_current_instance().warning(f'{len(data_list)} images loaded')
+            
+        return data_list

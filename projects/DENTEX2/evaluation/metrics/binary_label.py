@@ -1,5 +1,6 @@
 from typing import Dict, Sequence
 
+import cv2
 import matplotlib.pyplot as plt
 from mmengine.visualization import Visualizer
 import numpy as np
@@ -13,6 +14,7 @@ from sklearn.metrics import (
     f1_score,
 )
 import torch
+from torchvision.utils import make_grid
 
 from mmpretrain.evaluation import SingleLabelMetric
 from mmpretrain.registry import METRICS
@@ -105,6 +107,40 @@ def draw_confusion_matrix(
     }
 
 
+def draw_false_positive(
+    results,
+    prefix,
+    steps,
+):
+    diffs = torch.cat([r['pred_score'][1] - r['gt_label'] for r in results])
+    for i, idx in enumerate(torch.argsort(diffs, descending=True)[:5]):
+        image = cv2.imread(results[idx]['img_path'])
+        if (
+            results[idx]['gt_label'][0] == 1
+            or results[idx]['pred_label'][0] == 0
+        ):
+            image = np.zeros_like(image)
+        vis = Visualizer.get_current_instance()
+        vis.add_image(f'{prefix}/false_positive_{i}', image, step=steps)
+
+
+def draw_false_negative(
+    results,
+    prefix,
+    steps,
+):
+    diffs = torch.cat([r['gt_label'] - r['pred_score'][1] for r in results])
+    for i, idx in enumerate(torch.argsort(diffs, descending=True)[:5]):
+        image = cv2.imread(results[idx]['img_path'])
+        if (
+            results[idx]['gt_label'][0] == 0
+            or results[idx]['pred_label'][0] == 1
+        ):
+            image = np.zeros_like(image)
+        vis = Visualizer.get_current_instance()
+        vis.add_image(f'{prefix}/false_negative_{i}', image, step=steps)
+
+
 @METRICS.register_module()
 class BinaryLabelMetric(SingleLabelMetric):
 
@@ -121,13 +157,19 @@ class BinaryLabelMetric(SingleLabelMetric):
 
     def process(self, data_batch, data_samples: Sequence[dict]) -> None:
         for data_sample in data_samples:
-            pred_score, pred_label, gt_label = torch.tensor(0.0), 0, 0
-            for task in data_sample:
-                pred_score = torch.maximum(pred_score, data_sample[task]['pred_score'])
-                pred_label |= data_sample[task]['pred_label'][0]
-                gt_label |= data_sample[task]['gt_label'][0]
+            if 'pred_label' not in data_sample:
+                pred_score, pred_label, gt_label = torch.tensor(0.0), 0, 0
+                for task in data_sample:
+                    pred_score = torch.maximum(pred_score, data_sample[task]['pred_score'])
+                    pred_label |= data_sample[task]['pred_label'][0]
+                    gt_label |= data_sample[task]['gt_label'][0]
+            else:
+                pred_score = data_sample['pred_score']
+                pred_label = data_sample['pred_label'][0]
+                gt_label = data_sample['gt_label'][0]
 
             self.results.append({
+                'img_path': data_sample['img_path'],
                 'pred_score': pred_score,
                 'pred_label': pred_label.reshape(-1),
                 'gt_label': gt_label.reshape(-1),
@@ -137,6 +179,10 @@ class BinaryLabelMetric(SingleLabelMetric):
     def evaluate(self, size):
         # determine and draw ROC curve of results
         self.steps += 1
+
+        draw_false_positive(self.results, self.prefix_, self.steps)
+        draw_false_negative(self.results, self.prefix_, self.steps)
+
         roc_metrics = draw_roc_curve(self.results, self.prefix_, self.steps)
 
         thr = roc_metrics['optimal_thr']

@@ -4,6 +4,7 @@ import json
 from multiprocessing import cpu_count, Pool
 from pathlib import Path
 import re
+import shutil
 from typing import Dict
 
 import cv2
@@ -89,10 +90,10 @@ class ToothCropDataset(CustomDataset):
 
         # extend bbox to incorporate context
         bbox = [
-            max(bbox[0] - self.extend * width, 0),
-            max(bbox[1] - self.extend * height, 0),
-            min(width - 1, bbox[2] + self.extend * width),
-            min(height - 1, bbox[3] + self.extend * height),
+            max(bbox[0] - self.extend * poly['bbox'][2], 0),
+            max(bbox[1] - self.extend * poly['bbox'][3], 0),
+            min(width - 1, bbox[2] + self.extend * poly['bbox'][2]),
+            min(height - 1, bbox[3] + self.extend * poly['bbox'][3]),
         ]
 
         # determine slices to crop imge
@@ -119,10 +120,11 @@ class ToothCropDataset(CustomDataset):
 
         # add mask as last channel and crop according to extended bbox
         img_crop = img[slices]
+        img_irrelevant = bbox[0] == 0 or bbox[2] == width - 1
 
-        return img_crop
+        return img_crop, img_irrelevant
     
-    def save_tooth_diagnosis(self, img_path, img_crop, fdi_label, attribute) -> Path:
+    def save_tooth_diagnosis(self, img_path, img_crop, fdi_label, attribute) -> str:
         label_path = Path(self.img_prefix) / attribute
         label_path.mkdir(parents=True, exist_ok=True)
 
@@ -133,7 +135,7 @@ class ToothCropDataset(CustomDataset):
         if img_crop is not None:
             cv2.imwrite(str(out_file), img_crop)
 
-        return out_file
+        return out_file.stem[:-2]
     
     def crop_tooth_diagnosis_single(
         self,
@@ -149,7 +151,7 @@ class ToothCropDataset(CustomDataset):
         },
         eps: float=1e-6,
     ):
-        stem2logits = defaultdict(int)
+        stem2embedding = defaultdict(lambda: defaultdict(list))
         img_path = Path(self.img_prefix) / img_dict['file_name']
 
         if img_path.stem not in saved_img_stems:
@@ -158,7 +160,7 @@ class ToothCropDataset(CustomDataset):
         gt = gt_coco.imgToAnns[img_dict['id']]
         preds = pred_coco.imgToAnns[img_dict['id']]
         if not preds:
-            return stem2logits, None
+            return stem2embedding, None
 
         ious = compute_iou(
             preds, gt, img_dict['height'], img_dict['width'], self.iou_type,
@@ -193,27 +195,36 @@ class ToothCropDataset(CustomDataset):
                 poly['segmentation'] = pred_poly['segmentation']
             fdi_label = pred_coco.cats[pred_poly['category_id']]['name']
 
-            img_crop = (
+            img_crop, img_irrelevant = (
                 self.crop_tooth(img, poly)
                 if img_path.stem not in saved_img_stems else
-                None
+                (None, None)
             )
+            if img_crop is not None:
+                if img_crop.shape[0] < 100 or img_crop.shape[1] < 100:
+                    continue
+                aspect_ratio = img_crop.shape[0] / img_crop.shape[1]
+                if aspect_ratio < 0.5 or 2 < aspect_ratio:
+                    continue
+                if img_irrelevant:
+                    continue
 
             if (
                 'extra' in pred_poly
-                and 'logits' in pred_poly['extra']
+                and 'embedding' in pred_poly['extra']
             ):
-                stem2logits[f'{img_path.stem}_{fdi_label}'] = pred_poly['extra']['logits']
+                embedding = pred_poly['extra']['embedding']
             else:
-                stem2logits[f'{img_path.stem}_{fdi_label}'] = 0
-                
+                None                
 
             if (
                 'extra' not in poly or
                 'attributes' not in poly['extra'] or
                 not any(attr in self.metainfo['classes'] for attr in poly['extra']['attributes'])
             ):
-                self.save_tooth_diagnosis(img_path, img_crop, fdi_label, self.metainfo['classes'][0])
+                label = self.metainfo['classes'][0]
+                out_file = self.save_tooth_diagnosis(img_path, img_crop, fdi_label, label)
+                stem2embedding[label][out_file].append(embedding)
                 continue
             
             for i, attribute in enumerate(poly['extra']['attributes']):
@@ -223,15 +234,18 @@ class ToothCropDataset(CustomDataset):
                 if 'scores' in poly['extra'] and poly['extra']['scores'][i] < score_thrs[attribute][1]:
                     continue
 
-                self.save_tooth_diagnosis(img_path, img_crop, fdi_label, attribute)
+                out_file = self.save_tooth_diagnosis(img_path, img_crop, fdi_label, attribute)
+                stem2embedding[attribute][out_file].append(embedding)
 
             if (
                 'scores' in poly['extra'] and
                 all(score < score_thrs[attr][0] for attr, score in zip(*poly['extra'].values()))
             ):
-                self.save_tooth_diagnosis(img_path, img_crop, fdi_label, self.metainfo['classes'][0])
+                label = self.metainfo['classes'][0]
+                out_file = self.save_tooth_diagnosis(img_path, img_crop, fdi_label, label)
+                stem2embedding[label][out_file].append(embedding)
 
-        return stem2logits, pred_polys
+        return stem2embedding, pred_polys
 
     def crop_tooth_diagnosis(
         self,
@@ -241,16 +255,17 @@ class ToothCropDataset(CustomDataset):
         saved_img_stems = set([
             '_'.join(f.stem.split('_')[:-1])
             for f in Path(self.img_prefix).glob('*/*.png')
+            if f.parent.name in self.metainfo['classes']
         ])
 
-        stem2logits = defaultdict(int)
+        stem2embedding = defaultdict(lambda: defaultdict(list))
         pred_img_anns = []
         if not self.num_workers:
             for img_dict in tqdm(list(gt_coco.imgs.values())):
-                logits_dict, pred_anns = self.crop_tooth_diagnosis_single(
+                embedding_dict, pred_anns = self.crop_tooth_diagnosis_single(
                     gt_coco, pred_coco, saved_img_stems, img_dict,
                 )
-                stem2logits.update(logits_dict)
+                {stem2embedding[k].update(embedding_dict[k]) for k in embedding_dict}
                 pred_img_anns.append(pred_anns)
         else:        
             with Pool(self.num_workers) as p:
@@ -258,14 +273,18 @@ class ToothCropDataset(CustomDataset):
                     func=partial(self.crop_tooth_diagnosis_single, gt_coco, pred_coco, saved_img_stems),
                     iterable=gt_coco.imgs.values(),
                 )
-                for logits_dict, pred_anns in tqdm(iterator, total=len(gt_coco.imgs)):
-                    stem2logits.update(logits_dict)
+                for embedding_dict, pred_anns in tqdm(iterator, total=len(gt_coco.imgs)):
+                    {stem2embedding[k].update(embedding_dict[k]) for k in embedding_dict}
                     pred_img_anns.append(pred_anns)
 
         coco_dict = {
             'images': [img for img, img_anns in zip(gt_coco.imgs.values(), pred_img_anns) if img_anns is not None],
             'categories': list(pred_coco.cats.values()),
-            'tag_categories': pred_coco.dataset['tag_categories'],
+            **(
+                {'tag_categories': pred_coco.dataset['tag_categories']}
+                if 'tag_categories' in pred_coco.dataset else
+                {}
+            ),
         }
         pred_img_anns = [img_anns for img_anns in pred_img_anns if img_anns is not None]
         coco_dict['annotations'] = [ann for img_anns in pred_img_anns for ann in img_anns]
@@ -273,9 +292,9 @@ class ToothCropDataset(CustomDataset):
         with open('pred_odo_diagnoses.json', 'w') as f:
             json.dump(coco_dict, f, indent=2)
 
-        return stem2logits
+        return stem2embedding
 
-    def load_annotations(self, stem2logits, coco, balance=False):
+    def load_annotations(self, stem2embedding, coco, balance=False):
         ann_img_stems = [Path(img_dict['file_name']).stem for img_dict in coco.imgs.values()]
 
         if self.omit_file:
@@ -312,7 +331,7 @@ class ToothCropDataset(CustomDataset):
                 data_list.append({
                     'img_path': str(f),
                     'gt_label': gt_label,
-                    'logits': stem2logits[f.stem],
+                    'embedding': stem2embedding[label][f.stem[:-2]][int(f.stem[-1])],
                 })
                 img_paths.add(str(f))
                 i += 1
@@ -326,9 +345,8 @@ class ToothCropDataset(CustomDataset):
         gt_coco = COCO(self.ann_file)
         pred_coco = COCO(self.pred_file)
 
-        stem2logits = self.crop_tooth_diagnosis(gt_coco, pred_coco)
-        # stem2logits = defaultdict(int)
-        data_list = self.load_annotations(stem2logits, gt_coco)
+        stem2embedding = self.crop_tooth_diagnosis(gt_coco, pred_coco)
+        data_list = self.load_annotations(stem2embedding, gt_coco)
 
         self.fdi2idx = defaultdict(list)
         for i, d in enumerate(data_list):
