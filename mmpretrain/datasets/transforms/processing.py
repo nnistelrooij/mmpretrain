@@ -4,7 +4,6 @@ import math
 import numbers
 import re
 import string
-import traceback
 from enum import EnumMeta
 from numbers import Number
 from typing import Dict, List, Optional, Sequence, Tuple, Union
@@ -12,9 +11,13 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 import mmcv
 import mmengine
 import numpy as np
+import torch
 import torchvision
+import torchvision.transforms.functional as F
 from mmcv.transforms import BaseTransform
 from mmcv.transforms.utils import cache_randomness
+from PIL import Image
+from torchvision import transforms
 from torchvision.transforms.transforms import InterpolationMode
 
 from mmpretrain.registry import TRANSFORMS
@@ -45,43 +48,23 @@ def _interpolation_modes_from_str(t: str):
     return inverse_modes_mapping[t]
 
 
-def _warpper_vision_transform_cls(vision_transform_cls, new_name):
-    """build a transform warpper class for specific torchvison.transform to
-    handle the different input type between torchvison.transforms with
-    mmcls.datasets.transforms."""
+class TorchVisonTransformWrapper:
 
-    def new_init(self, *args, **kwargs):
+    def __init__(self, transform, *args, **kwargs):
         if 'interpolation' in kwargs and isinstance(kwargs['interpolation'],
                                                     str):
             kwargs['interpolation'] = _interpolation_modes_from_str(
                 kwargs['interpolation'])
         if 'dtype' in kwargs and isinstance(kwargs['dtype'], str):
             kwargs['dtype'] = _str_to_torch_dtype(kwargs['dtype'])
+        self.t = transform(*args, **kwargs)
 
-        try:
-            self.t = vision_transform_cls(*args, **kwargs)
-        except TypeError as e:
-            traceback.print_exc()
-            raise TypeError(
-                f'Error when init the {vision_transform_cls}, please '
-                f'check the argmemnts of {args} and {kwargs}. \n{e}')
+    def __call__(self, results):
+        results['img'] = self.t(results['img'])
+        return results
 
-    def new_call(self, input):
-        try:
-            input['img'] = self.t(input['img'])
-        except Exception as e:
-            traceback.print_exc()
-            raise Exception('Error when processing of transform(`torhcvison/'
-                            f'{vision_transform_cls.__name__}`). \n{e}')
-        return input
-
-    def new_str(self):
-        return str(self.t)
-
-    new_transforms_cls = type(
-        new_name, (),
-        dict(__init__=new_init, __call__=new_call, __str__=new_str))
-    return new_transforms_cls
+    def __repr__(self) -> str:
+        return f'TorchVision{repr(self.t)}'
 
 
 def register_vision_transforms() -> List[str]:
@@ -99,10 +82,11 @@ def register_vision_transforms() -> List[str]:
         _transform = getattr(torchvision.transforms, module_name)
         if inspect.isclass(_transform) and callable(
                 _transform) and not isinstance(_transform, (EnumMeta)):
-            new_cls = _warpper_vision_transform_cls(
-                _transform, f'TorchVison{module_name}')
+            from functools import partial
             TRANSFORMS.register_module(
-                module=new_cls, name=f'torchvision/{module_name}')
+                module=partial(
+                    TorchVisonTransformWrapper, transform=_transform),
+                name=f'torchvision/{module_name}')
             vision_transforms.append(f'torchvision/{module_name}')
     return vision_transforms
 
@@ -193,7 +177,7 @@ class RandomCrop(BaseTransform):
             return 0, 0, h, w
         elif w < target_w or h < target_h:
             target_w = min(w, target_w)
-            target_h = min(w, target_h)
+            target_h = min(h, target_h)
 
         offset_h = np.random.randint(0, h - target_h + 1)
         offset_w = np.random.randint(0, w - target_w + 1)
@@ -1759,4 +1743,53 @@ class RandomTranslatePad(BaseTransform):
                 box[1], box[3] = box[1] + top, box[3] + top
                 results['gt_bboxes'][i] = box
 
+        return results
+
+
+@TRANSFORMS.register_module()
+class MAERandomResizedCrop(transforms.RandomResizedCrop):
+    """RandomResizedCrop for matching TF/TPU implementation: no for-loop is
+    used.
+
+    This may lead to results different with torchvision's version.
+    Following BYOL's TF code:
+    https://github.com/deepmind/deepmind-research/blob/master/byol/utils/dataset.py#L206 # noqa: E501
+    """
+
+    @staticmethod
+    def get_params(img: Image.Image, scale: tuple, ratio: tuple) -> Tuple:
+        width, height = img.size
+        area = height * width
+
+        target_area = area * torch.empty(1).uniform_(scale[0], scale[1]).item()
+        log_ratio = torch.log(torch.tensor(ratio))
+        aspect_ratio = torch.exp(
+            torch.empty(1).uniform_(log_ratio[0], log_ratio[1])).item()
+
+        w = int(round(math.sqrt(target_area * aspect_ratio)))
+        h = int(round(math.sqrt(target_area / aspect_ratio)))
+
+        w = min(w, width)
+        h = min(h, height)
+
+        i = torch.randint(0, height - h + 1, size=(1, )).item()
+        j = torch.randint(0, width - w + 1, size=(1, )).item()
+
+        return i, j, h, w
+
+    def forward(self, results: dict) -> dict:
+        """The forward function of MAERandomResizedCrop.
+
+        Args:
+            results (dict): The results dict contains the image and all these
+                information related to the image.
+
+        Returns:
+            dict: The results dict contains the cropped image and all these
+            information related to the image.
+        """
+        img = results['img']
+        i, j, h, w = self.get_params(img, self.scale, self.ratio)
+        img = F.resized_crop(img, i, j, h, w, self.size, self.interpolation)
+        results['img'] = img
         return results

@@ -12,9 +12,12 @@ from .formatting import (Collect, NumpyToPIL, PackInputs, PackMultiTaskInputs,
                          PILToNumpy, Transpose)
 from .processing import (Albumentations, BEiTMaskGenerator, CleanCaption,
                          ColorJitter, EfficientNetCenterCrop,
-                         EfficientNetRandomCrop, Lighting, RandomCrop,
-                         RandomErasing, RandomResizedCrop, RandomTranslatePad,
-                         ResizeEdge, SimMIMMaskGenerator)
+                         EfficientNetRandomCrop, Lighting,
+                         MAERandomResizedCrop, RandomCrop, RandomErasing,
+                         RandomResizedCrop,
+                         RandomResizedCropAndInterpolationWithTwoPic,
+                         RandomTranslatePad, ResizeEdge, SimMIMMaskGenerator)
+from .utils import get_transform_idx, remove_transform
 from .wrappers import ApplyToList, MultiView
 
 for t in (CenterCrop, LoadImageFromFile, Normalize, RandomFlip,
@@ -32,5 +35,7 @@ __all__ = [
     'PackMultiTaskInputs', 'GaussianBlur', 'BEiTMaskGenerator',
     'SimMIMMaskGenerator', 'CenterCrop', 'LoadImageFromFile', 'Normalize',
     'RandomFlip', 'RandomGrayscale', 'RandomResize', 'Resize', 'MultiView',
-    'ApplyToList', 'CleanCaption', 'RandomTranslatePad'
+    'ApplyToList', 'CleanCaption', 'RandomTranslatePad',
+    'RandomResizedCropAndInterpolationWithTwoPic', 'get_transform_idx',
+    'remove_transform', 'MAERandomResizedCrop'
 ]

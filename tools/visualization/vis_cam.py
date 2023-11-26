@@ -183,7 +183,7 @@ def show_cam_grad(grayscale_cam, src_img, title, out_path=None):
         mmcv.imshow(visualization_img, win_name=title)
 
 
-def get_default_traget_layers(model, args):
+def get_default_target_layers(model, args):
     """get default target layers from given model, here choose nrom type layer
     as default target layer."""
     norm_layers = [
@@ -199,7 +199,8 @@ def get_default_traget_layers(model, args):
         num_extra_tokens = args.num_extra_tokens or getattr(
             model.backbone, 'num_extra_tokens', 1)
 
-        out_type = getattr(model.backbone, 'out_type')
+        # models like swin have no attr 'out_type', set out_type to avg_featmap
+        out_type = getattr(model.backbone, 'out_type', 'avg_featmap')
         if out_type == 'cls_token' or num_extra_tokens > 0:
             # Assume the backbone feature is class token.
             name, layer = norm_layers[-3]
@@ -240,7 +241,7 @@ def main():
             get_layer(layer, model) for layer in args.target_layers
         ]
     else:
-        target_layers = get_default_traget_layers(model, args)
+        target_layers = get_default_target_layers(model, args)
 
     # init a cam grad calculator
     use_cuda = ('cuda' in args.device)

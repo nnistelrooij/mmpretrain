@@ -46,7 +46,7 @@ class ImageRetrievalInferencer(BaseInferencer):
     Example:
         >>> from mmpretrain import ImageRetrievalInferencer
         >>> inferencer = ImageRetrievalInferencer(
-        ...     'resnet50-arcface_8xb32_inshop',
+        ...     'resnet50-arcface_inshop',
         ...     prototype='./demo/',
         ...     prototype_cache='img_retri.pth')
         >>> inferencer('demo/cat-dog.png', topk=2)[0][1]
@@ -108,6 +108,7 @@ class ImageRetrievalInferencer(BaseInferencer):
             # A config of dataset
             from mmpretrain.registry import DATASETS
             test_pipeline = [dict(type='LoadImageFromFile'), self.pipeline]
+            prototype.setdefault('pipeline', test_pipeline)
             dataset = DATASETS.build(prototype)
             dataloader = build_dataloader(dataset)
         elif isinstance(prototype, DataLoader):
@@ -172,9 +173,11 @@ class ImageRetrievalInferencer(BaseInferencer):
 
     def _init_pipeline(self, cfg: Config) -> Callable:
         test_pipeline_cfg = cfg.test_dataloader.dataset.pipeline
-        if test_pipeline_cfg[0]['type'] == 'LoadImageFromFile':
-            # Image loading is finished in `self.preprocess`.
-            test_pipeline_cfg = test_pipeline_cfg[1:]
+        from mmpretrain.datasets import remove_transform
+
+        # Image loading is finished in `self.preprocess`.
+        test_pipeline_cfg = remove_transform(test_pipeline_cfg,
+                                             'LoadImageFromFile')
         test_pipeline = Compose(
             [TRANSFORMS.build(t) for t in test_pipeline_cfg])
         return test_pipeline

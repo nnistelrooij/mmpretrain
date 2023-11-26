@@ -5,6 +5,7 @@ import os.path as osp
 from copy import deepcopy
 
 from mmengine.config import Config, ConfigDict, DictAction
+from mmengine.registry import RUNNERS
 from mmengine.runner import Runner
 from mmengine.utils import digit_version
 from mmengine.utils.dl_utils import TORCH_VERSION
@@ -90,10 +91,6 @@ def merge_args(cfg, args):
 
     # enable automatic-mixed-precision training
     if args.amp is True:
-        optim_wrapper = cfg.optim_wrapper.get('type', 'OptimWrapper')
-        assert optim_wrapper in ['OptimWrapper', 'AmpOptimWrapper'], \
-            '`--amp` is not supported custom optimizer wrapper type ' \
-            f'`{optim_wrapper}.'
         cfg.optim_wrapper.type = 'AmpOptimWrapper'
         cfg.optim_wrapper.setdefault('loss_scale', 'dynamic')
 
@@ -149,7 +146,13 @@ def main():
     cfg = merge_args(cfg, args)
 
     # build the runner from config
-    runner = Runner.from_cfg(cfg)
+    if 'runner_type' not in cfg:
+        # build the default runner
+        runner = Runner.from_cfg(cfg)
+    else:
+        # build customized runner from the registry
+        # if 'runner_type' is set in the cfg
+        runner = RUNNERS.build(cfg)
 
     # start training
     runner.train()

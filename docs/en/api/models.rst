@@ -15,6 +15,7 @@ The ``models`` package contains several sub-packages for addressing the differen
 - :mod:`~mmpretrain.models.necks`: The component between backbones and heads, e.g., GlobalAveragePooling.
 - :mod:`~mmpretrain.models.heads`: The component for specific tasks.
 - :mod:`~mmpretrain.models.losses`: Loss functions.
+- :mod:`~mmpretrain.models.peft`: The PEFT (Parameter-Efficient Fine-Tuning) module, e.g. LoRAModel.
 - :mod:`~mmpretrain.models.utils`: Some helper functions and common components used in various networks.
 
   - :mod:`~mmpretrain.models.utils.data_preprocessor`: The component before model to preprocess the inputs, e.g., ClsDataPreprocessor.
@@ -66,6 +67,7 @@ Self-supervised Algorithms
    CAE
    DenseCL
    EVA
+   iTPN
    MAE
    MILAN
    MaskFeat
@@ -75,6 +77,7 @@ Self-supervised Algorithms
    SimCLR
    SimMIM
    SimSiam
+   SparK
    SwAV
 
 .. _selfsup_backbones:
@@ -88,6 +91,8 @@ like ``mask``, and here is the a list of these **modified backbone** modules.
 
    BEiTPretrainViT
    CAEPretrainViT
+   iTPNHiViT
+   MAEHiViT
    MAEViT
    MILANViT
    MaskFeatViT
@@ -140,6 +145,9 @@ Multi-Modality Algorithms
    BlipVQA
    Flamingo
    OFA
+   MiniGPT4
+   Llava
+   Otter
 
 .. module:: mmpretrain.models.backbones
 
@@ -167,6 +175,7 @@ Backbones
    EfficientFormer
    EfficientNet
    EfficientNetV2
+   HiViT
    HRNet
    HorNet
    InceptionV3
@@ -198,6 +207,8 @@ Backbones
    SVT
    ShuffleNetV1
    ShuffleNetV2
+   SparseResNet
+   SparseConvNeXt
    SwinTransformer
    SwinTransformerV2
    T2T_ViT
@@ -235,6 +246,8 @@ Necks
    NonLinearNeck
    SimMIMLinearDecoder
    SwAVNeck
+   iTPNPretrainDecoder
+   SparKLightDecoder
 
 .. module:: mmpretrain.models.heads
 
@@ -271,6 +284,8 @@ Heads
    SwAVHead
    VigClsHead
    VisionTransformerClsHead
+   iTPNClipHead
+   SparKPretrainHead
 
 .. module:: mmpretrain.models.losses
 
@@ -291,6 +306,17 @@ Losses
    PixelReconstructionLoss
    SeesawLoss
    SwAVLoss
+
+.. module:: mmpretrain.models.peft
+
+PEFT
+------------------
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   LoRAModel
 
 .. module:: mmpretrain.models.utils
 

@@ -6,8 +6,10 @@ from .byol import BYOL
 from .cae import CAE, CAEPretrainViT, DALLEEncoder
 from .densecl import DenseCL
 from .eva import EVA
-from .mae import MAE, MAEViT
+from .itpn import iTPN, iTPNHiViT
+from .mae import MAE, MAEHiViT, MAEViT
 from .maskfeat import HOGGenerator, MaskFeat, MaskFeatViT
+from .mff import MFF, MFFViT
 from .milan import MILAN, CLIPGenerator, MILANViT
 from .mixmim import MixMIM, MixMIMPretrainTransformer
 from .moco import MoCo
@@ -15,6 +17,7 @@ from .mocov3 import MoCoV3, MoCoV3ViT
 from .simclr import SimCLR
 from .simmim import SimMIM, SimMIMSwinTransformer
 from .simsiam import SimSiam
+from .spark import SparK
 from .swav import SwAV
 
 __all__ = [
@@ -24,6 +27,9 @@ __all__ = [
     'CAEPretrainViT',
     'DALLEEncoder',
     'MAEViT',
+    'MAEHiViT',
+    'iTPNHiViT',
+    'iTPN',
     'HOGGenerator',
     'MaskFeatViT',
     'CLIPGenerator',
@@ -47,4 +53,7 @@ __all__ = [
     'DenseCL',
     'BarlowTwins',
     'SwAV',
+    'SparK',
+    'MFF',
+    'MFFViT',
 ]
