@@ -167,7 +167,7 @@ class ToothCropGCDataset(CustomDataset):
             data_info['sample_idx'] = len(self) + idx
 
         return data_info
-    
+
 
 @DATASETS.register_module()
 class ToothCropPNGsDataset(ToothCropGCDataset):
@@ -195,6 +195,57 @@ class ToothCropPNGsDataset(ToothCropGCDataset):
                 'img_id': i,
                 'img': img,
                 'img_path': file_path.as_posix()
+            }
+            data_list.append(image)
+
+        MMLogger.get_current_instance().warning(f'{len(data_list)} images loaded')
+            
+        return data_list
+    
+
+@DATASETS.register_module()
+class ToothCropTestDataset(ToothCropGCDataset):
+
+    def load_coco_images(self, img_dicts):
+        img_prefix = Path(self.data_prefix['img_path'])
+        images = {}
+        for img_dict in img_dicts:
+            file_path = Path(img_dict['file_name'])
+            img = cv2.imread(str(img_prefix / file_path))
+
+            images[img_dict['id']] = file_path, img
+            
+        return images
+    
+    def load_input_images(self):
+        img_prefix = Path(self.data_prefix['img_path'])
+        file_paths = sorted(img_prefix.glob('**/*.png'))
+        file_paths += sorted(img_prefix.glob('**/*.jpg'))
+        
+        images = {}
+        for i, file_path in enumerate(file_paths):
+            img = cv2.imread(str(file_path))
+            images[i] = file_path.relative_to(img_prefix), img
+            
+        return images
+    
+    def load_data_list(self):
+        MMLogger.get_current_instance().warning('loading images...')
+        
+        if self.ann_file:
+            coco = COCO(self.ann_file)
+            images = self.load_coco_images(coco.imgs.values())
+        else:
+            images = self.load_input_image()
+
+        data_list = []
+        for i, (file_path, img) in images.items():
+            image = {
+                'ori_shape': img.shape[:2],
+                'img_shape': img.shape[:2],
+                'img_id': i,
+                'img': img,
+                'img_path': file_path.as_posix(),
             }
             data_list.append(image)
 

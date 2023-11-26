@@ -5,7 +5,7 @@ from multiprocessing import cpu_count, Pool
 from pathlib import Path
 import re
 import shutil
-from typing import Dict
+from typing import Dict, Tuple
 
 import cv2
 import numpy as np
@@ -54,6 +54,7 @@ class ToothCropDataset(CustomDataset):
         segm_channel: bool=True,
         mask_tooth: bool=False,
         num_workers: int=0,
+        min_shape: Tuple[int, int]=(100, 100),
         *args, **kwargs,
     ):
         assert iou_type == 'segm' or not segm_channel
@@ -67,6 +68,7 @@ class ToothCropDataset(CustomDataset):
         self.segm_channel = segm_channel
         self.mask_tooth = mask_tooth
         self.num_workers = num_workers
+        self.min_shape = min_shape
 
         super().__init__(*args, **kwargs)
 
@@ -201,7 +203,10 @@ class ToothCropDataset(CustomDataset):
                 (None, None)
             )
             if img_crop is not None:
-                if img_crop.shape[0] < 100 or img_crop.shape[1] < 100:
+                if (
+                    img_crop.shape[0] < self.min_shape[0]
+                    or img_crop.shape[1] < self.min_shape[1]
+                ):
                     continue
                 aspect_ratio = img_crop.shape[0] / img_crop.shape[1]
                 if aspect_ratio < 0.5 or 2 < aspect_ratio:
