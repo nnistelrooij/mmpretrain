@@ -25,7 +25,7 @@ def draw_roc_curve(
     prefix,
     steps=0,
     specificity_range=[0.9, 1.0],
-    thr_range=[0.2, 0.8],
+    thr_range=[0.1, 0.9],
     thr_method: str='er',
 ) -> Dict[str, float]:
     pred_scores = torch.stack([r['pred_score'][1] for r in results]).cpu().numpy()
@@ -147,12 +147,14 @@ class BinaryLabelMetric(SingleLabelMetric):
     def __init__(
         self,
         prefix: str='binary-label',
+        gt_score_thr: float=0.5,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs, prefix='binary-label')
 
-        self.prefix_ = prefix  
+        self.prefix_ = prefix
+        self.gt_score_thr = gt_score_thr
         self.steps = 0  
 
     def process(self, data_batch, data_samples: Sequence[dict]) -> None:
@@ -162,17 +164,23 @@ class BinaryLabelMetric(SingleLabelMetric):
                 for task in data_sample:
                     pred_score = torch.maximum(pred_score, data_sample[task]['pred_score'])
                     pred_label |= data_sample[task]['pred_label'][0]
-                    gt_label |= data_sample[task]['gt_label'][0]
+                    if 'gt_score' in data_sample:
+                        gt_label |= data_sample[task]['gt_score'][1] >= self.gt_score_thr
+                    else:
+                        gt_label |= data_sample[task]['gt_label'][0]
             else:
                 pred_score = data_sample['pred_score']
                 pred_label = data_sample['pred_label'][0]
-                gt_label = data_sample['gt_label'][0]
+                if 'gt_score' in data_sample:
+                    gt_label = data_sample['gt_score'][1] >= self.gt_score_thr
+                else:
+                    gt_label = data_sample['gt_label'][0]
 
             self.results.append({
                 'img_path': data_sample['img_path'],
                 'pred_score': pred_score,
-                'pred_label': pred_label.reshape(-1),
-                'gt_label': gt_label.reshape(-1),
+                'pred_label': pred_label.reshape(-1).long(),
+                'gt_label': gt_label.reshape(-1).long(),
                 'num_classes': 2,
             })
 
@@ -183,7 +191,7 @@ class BinaryLabelMetric(SingleLabelMetric):
         draw_false_positive(self.results, self.prefix_, self.steps)
         draw_false_negative(self.results, self.prefix_, self.steps)
 
-        roc_metrics = draw_roc_curve(self.results, self.prefix_, self.steps)
+        roc_metrics = draw_roc_curve(self.results, self.prefix_, self.steps, thr_method='f1')
 
         thr = roc_metrics['optimal_thr']
         cm_metrics = draw_confusion_matrix(self.results, thr, self.prefix_, self.steps)

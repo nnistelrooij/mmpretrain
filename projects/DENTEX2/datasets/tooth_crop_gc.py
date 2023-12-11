@@ -236,7 +236,7 @@ class ToothCropTestDataset(ToothCropGCDataset):
             coco = COCO(self.ann_file)
             images = self.load_coco_images(coco.imgs.values())
         else:
-            images = self.load_input_image()
+            images = self.load_input_images()
 
         data_list = []
         for i, (file_path, img) in images.items():

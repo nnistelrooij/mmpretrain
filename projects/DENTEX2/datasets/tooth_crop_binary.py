@@ -55,6 +55,7 @@ class ToothCropDataset(CustomDataset):
         mask_tooth: bool=False,
         num_workers: int=0,
         min_shape: Tuple[int, int]=(100, 100),
+        min_opinions: int=0,
         *args, **kwargs,
     ):
         assert iou_type == 'segm' or not segm_channel
@@ -69,6 +70,7 @@ class ToothCropDataset(CustomDataset):
         self.mask_tooth = mask_tooth
         self.num_workers = num_workers
         self.min_shape = min_shape
+        self.min_opinions = min_opinions
 
         super().__init__(*args, **kwargs)
 
@@ -126,25 +128,26 @@ class ToothCropDataset(CustomDataset):
 
         return img_crop, img_irrelevant
     
-    def save_tooth_diagnosis(self, img_path, img_crop, fdi_label, attribute) -> str:
+    def save_tooth_diagnosis(self, img_path, img_crop, fdi_label, attribute, score: float=0.0) -> str:
         label_path = Path(self.img_prefix) / attribute
         label_path.mkdir(parents=True, exist_ok=True)
 
-        out_files = sorted(label_path.glob(f'{img_path.stem}_{fdi_label}*'))
+        out_files = sorted(label_path.glob(f'*_{img_path.stem}_{fdi_label}*'))
         fdi_idx = int(out_files[-1].stem[-1]) + 1 if out_files else 0
-        out_file = label_path / f'{img_path.stem}_{fdi_label}-{fdi_idx}.png'
+        out_file = label_path / f'{float(score):.3f}_{img_path.stem}_{fdi_label}-{fdi_idx}.png'
 
         if img_crop is not None:
-            cv2.imwrite(str(out_file), img_crop)
+            if not cv2.imwrite(str(out_file), img_crop):
+                print('Image not written!')
 
-        return out_file.stem[:-2]
+        return out_file.stem[6:-2]
     
     def crop_tooth_diagnosis_single(
         self,
-        gt_coco,
-        pred_coco,
         saved_img_stems,
-        img_dict,
+        gt_cats,
+        pred_cats,
+        input,
         score_thrs={
             'Caries': (0.8, 0.8),
             'Deep Caries': (0.8, 0.8),
@@ -152,27 +155,27 @@ class ToothCropDataset(CustomDataset):
             'Impacted': (0.8, 0.8),
         },
         eps: float=1e-6,
-    ):
-        stem2embedding = defaultdict(lambda: defaultdict(list))
+    ):        
+        gt_anns, pred_anns, img_dict = input
+
+        stem2embedding = defaultdict(self.default_dict)
         img_path = Path(self.img_prefix) / img_dict['file_name']
 
         if img_path.stem not in saved_img_stems:
             img = cv2.imread(str(img_path))
 
-        gt = gt_coco.imgToAnns[img_dict['id']]
-        preds = pred_coco.imgToAnns[img_dict['id']]
-        if not preds:
+        if not pred_anns:
             return stem2embedding, None
 
         ious = compute_iou(
-            preds, gt, img_dict['height'], img_dict['width'], self.iou_type,
+            pred_anns, gt_anns, img_dict['height'], img_dict['width'], self.iou_type,
         )
-        pred_polys = preds
-        for poly, ious in zip(gt, ious.T):
-            pred_poly, iou = preds[ious.argmax()], ious.max()
+        pred_polys = pred_anns
+        for poly, ious in zip(gt_anns, ious.T):
+            pred_poly, iou = pred_anns[ious.argmax()], ious.max()
 
             # exclude quadrant ground-truth annotations
-            if len(gt_coco.cats[poly['category_id']]['name']) == 1:
+            if len(gt_cats[poly['category_id']]['name']) == 1:
                 continue
             
             # exclude non-overlapping predictions
@@ -180,22 +183,31 @@ class ToothCropDataset(CustomDataset):
                 pred_polys = None
                 continue
 
+
+
             if 'extra' in poly and 'attributes' in poly['extra']:
                 pred_poly['extra']['attributes'] = poly['extra']['attributes']
+
+                if self.min_opinions > 0 and (
+                    'no_opinions' not in poly['extra']['attributes']
+                    or not poly['extra']['attributes']['no_opinions']
+                    or float(poly['extra']['attributes']['no_opinions']) < self.min_opinions
+                ):
+                    continue
 
             # in case of duplicate predictions, pick class of ground truth
             if iou > 1 - eps:
                 for idx in np.nonzero(ious > 1 - eps)[0]:
-                    if preds[idx]['category_id'] != poly['category_id']:
+                    if pred_anns[idx]['category_id'] != poly['category_id']:
                         continue
 
-                    pred_poly = preds[idx]
+                    pred_poly = pred_anns[idx]
 
                 assert poly['category_id'] == pred_poly['category_id'], 'mismatch'
 
             if self.iou_type == 'segm':
                 poly['segmentation'] = pred_poly['segmentation']
-            fdi_label = pred_coco.cats[pred_poly['category_id']]['name']
+            fdi_label = pred_cats[pred_poly['category_id']]['name']
 
             img_crop, img_irrelevant = (
                 self.crop_tooth(img, poly)
@@ -220,7 +232,7 @@ class ToothCropDataset(CustomDataset):
             ):
                 embedding = pred_poly['extra']['embedding']
             else:
-                None                
+                embedding = None
 
             if (
                 'extra' not in poly or
@@ -232,25 +244,18 @@ class ToothCropDataset(CustomDataset):
                 stem2embedding[label][out_file].append(embedding)
                 continue
             
-            for i, attribute in enumerate(poly['extra']['attributes']):
+            for attribute, value in poly['extra']['attributes'].items():
                 if attribute not in self.metainfo['classes']:
                     continue
 
-                if 'scores' in poly['extra'] and poly['extra']['scores'][i] < score_thrs[attribute][1]:
-                    continue
-
-                out_file = self.save_tooth_diagnosis(img_path, img_crop, fdi_label, attribute)
-                stem2embedding[attribute][out_file].append(embedding)
-
-            if (
-                'scores' in poly['extra'] and
-                all(score < score_thrs[attr][0] for attr, score in zip(*poly['extra'].values()))
-            ):
-                label = self.metainfo['classes'][0]
-                out_file = self.save_tooth_diagnosis(img_path, img_crop, fdi_label, label)
+                label = attribute if float(value) > 0 else self.metainfo['classes'][0]
+                out_file = self.save_tooth_diagnosis(img_path, img_crop, fdi_label, label, value)
                 stem2embedding[label][out_file].append(embedding)
 
         return stem2embedding, pred_polys
+    
+    def default_dict(self):
+        return defaultdict(list)
 
     def crop_tooth_diagnosis(
         self,
@@ -258,44 +263,45 @@ class ToothCropDataset(CustomDataset):
         pred_coco: COCO,
     ) -> Dict:
         saved_img_stems = set([
-            '_'.join(f.stem.split('_')[:-1])
+            '_'.join(f.stem.split('_')[1:-1])
             for f in Path(self.img_prefix).glob('*/*.png')
             if f.parent.name in self.metainfo['classes']
         ])
 
-        stem2embedding = defaultdict(lambda: defaultdict(list))
+        stem2embedding = defaultdict(self.default_dict)
         pred_img_anns = []
         if not self.num_workers:
             for img_dict in tqdm(list(gt_coco.imgs.values())):
                 embedding_dict, pred_anns = self.crop_tooth_diagnosis_single(
-                    gt_coco, pred_coco, saved_img_stems, img_dict,
+                    saved_img_stems,
+                    gt_coco.cats,
+                    pred_coco.cats,
+                    (
+                        gt_coco.imgToAnns[img_dict['id']],
+                        pred_coco.imgToAnns[img_dict['id']],
+                        img_dict,
+                    ),
                 )
                 {stem2embedding[k].update(embedding_dict[k]) for k in embedding_dict}
                 pred_img_anns.append(pred_anns)
         else:        
             with Pool(self.num_workers) as p:
                 iterator = p.imap_unordered(
-                    func=partial(self.crop_tooth_diagnosis_single, gt_coco, pred_coco, saved_img_stems),
-                    iterable=gt_coco.imgs.values(),
+                    func=partial(
+                        self.crop_tooth_diagnosis_single,
+                        saved_img_stems, gt_coco.cats, pred_coco.cats,
+                    ),
+                    iterable=[
+                        (
+                            gt_coco.imgToAnns[img_dict['id']],
+                            pred_coco.imgToAnns[img_dict['id']],
+                            img_dict,
+                        ) for img_dict in gt_coco.imgs.values()
+                    ],
                 )
                 for embedding_dict, pred_anns in tqdm(iterator, total=len(gt_coco.imgs)):
                     {stem2embedding[k].update(embedding_dict[k]) for k in embedding_dict}
-                    pred_img_anns.append(pred_anns)
-
-        coco_dict = {
-            'images': [img for img, img_anns in zip(gt_coco.imgs.values(), pred_img_anns) if img_anns is not None],
-            'categories': list(pred_coco.cats.values()),
-            **(
-                {'tag_categories': pred_coco.dataset['tag_categories']}
-                if 'tag_categories' in pred_coco.dataset else
-                {}
-            ),
-        }
-        pred_img_anns = [img_anns for img_anns in pred_img_anns if img_anns is not None]
-        coco_dict['annotations'] = [ann for img_anns in pred_img_anns for ann in img_anns]
-        
-        with open('pred_odo_diagnoses.json', 'w') as f:
-            json.dump(coco_dict, f, indent=2)
+                    pred_img_anns.append(pred_anns)        
 
         return stem2embedding
 
@@ -323,8 +329,8 @@ class ToothCropDataset(CustomDataset):
                     break
 
                 if (
-                    '_'.join(f.stem.split('_')[:-1]) not in ann_img_stems or
-                    '_'.join(f.stem.split('_')[:-1]) in omit_img_stems
+                    '_'.join(f.stem.split('_')[1:-1]) not in ann_img_stems or
+                    '_'.join(f.stem.split('_')[1:-1]) in omit_img_stems
                 ):
                     continue
 
@@ -333,10 +339,18 @@ class ToothCropDataset(CustomDataset):
                 if str(f) in img_paths:
                     continue
 
+                gt_score = float(f.name.split('_')[0])
+
+                embedding = np.zeros(86, dtype=int)
+                fdi = int(f.stem[-4:-2])
+                embedding[fdi] = 1
+
                 data_list.append({
                     'img_path': str(f),
                     'gt_label': gt_label,
-                    'embedding': stem2embedding[label][f.stem[:-2]][int(f.stem[-1])],
+                    'gt_score': [1 - gt_score, gt_score],
+                    # 'embedding': stem2embedding[label][f.stem[6:-2]][int(f.stem[-1])],
+                    'embedding': embedding,
                 })
                 img_paths.add(str(f))
                 i += 1
