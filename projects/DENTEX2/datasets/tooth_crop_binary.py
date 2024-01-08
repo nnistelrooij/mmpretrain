@@ -56,11 +56,9 @@ class ToothCropDataset(CustomDataset):
         num_workers: int=0,
         min_shape: Tuple[int, int]=(100, 100),
         min_opinions: int=0,
+        remove_irrelevant: bool=True,
         *args, **kwargs,
     ):
-        assert iou_type == 'segm' or not segm_channel
-        assert iou_type == 'segm' or not mask_tooth
-
         self.extend = extend
         self.pred_file = pred_file
         self.omit_file = omit_file
@@ -71,6 +69,7 @@ class ToothCropDataset(CustomDataset):
         self.num_workers = num_workers
         self.min_shape = min_shape
         self.min_opinions = min_opinions
+        self.remove_irrelevant = remove_irrelevant
 
         super().__init__(*args, **kwargs)
 
@@ -83,8 +82,11 @@ class ToothCropDataset(CustomDataset):
             if 'size' not in rle:
                 rle = maskUtils.frPyObjects(rle, height, width)
             bbox = maskUtils.toBbox(rle)
+            mask = maskUtils.decode([rle]).astype(bool)
         else:
-            bbox = poly['bbox']
+            bbox = list(map(int, poly['bbox']))
+            mask = np.zeros((height, width), dtype=bool)
+            mask[bbox[1]:bbox[1] + bbox[3], bbox[0]:bbox[0] + bbox[2]] = True
         bbox = [
             poly['bbox'][0],
             poly['bbox'][1],
@@ -101,14 +103,24 @@ class ToothCropDataset(CustomDataset):
         ]
 
         # determine slices to crop imge
-        slices = (
+        crop_slices = (
             slice(int(bbox[1]), int(bbox[3]) + 1),
             slice(int(bbox[0]), int(bbox[2]) + 1)
         )
+        
+        # expand bounding box to square
+        max_side = int(max(bbox[2] - bbox[0] + 1, bbox[3] - bbox[1] + 1))
+        slices = ()
+        for slc, dim in zip(crop_slices, (height, width)):
+            diff = max_side - (slc.stop - slc.start)
+            diff = diff // 2, diff // 2 + diff % 2
+            slc = slice(slc.start - diff[0], slc.stop + diff[1])
+            diff = dim - min(slc.start, 0) - max(dim, slc.stop)
+            slc = slice(slc.start + diff, slc.stop + diff)
+            slices += (slc,)
 
         # add extra channel of tooth segmentation
         if self.segm_channel:
-            mask = maskUtils.decode([rle]).astype(bool)
             img = np.dstack((
                 img[..., 0],
                 img[..., 0],
@@ -117,14 +129,13 @@ class ToothCropDataset(CustomDataset):
 
         # only keep tooth in tooth crop image
         if self.mask_tooth:
-            mask = maskUtils.decode([rle]).astype(bool)
             mask = mask[..., None] if mask.ndim == 2 else mask
             mask = np.repeat(mask, 3, axis=2).astype(bool)
             img[~mask] = 0
 
         # add mask as last channel and crop according to extended bbox
         img_crop = img[slices]
-        img_irrelevant = bbox[0] == 0 or bbox[2] == width - 1
+        img_irrelevant = crop_slices[1].start == 0 or crop_slices[1].stop == width
 
         return img_crop, img_irrelevant
     
@@ -223,7 +234,7 @@ class ToothCropDataset(CustomDataset):
                 aspect_ratio = img_crop.shape[0] / img_crop.shape[1]
                 if aspect_ratio < 0.5 or 2 < aspect_ratio:
                     continue
-                if img_irrelevant:
+                if self.remove_irrelevant and img_irrelevant:
                     continue
 
             if (

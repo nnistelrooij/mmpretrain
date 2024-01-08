@@ -75,7 +75,7 @@ class RandomResizedClassPreservingCrop(RandomResizedCrop):
                 slice(offset_w, offset_w + target_w),
             )
             tooth_slices = ndimage.find_objects(img[slices][..., 2] > 0)
-            if (
+            if self.margin > 0 and ( 
                 not tooth_slices or
                 tooth_slices[0][0].start < margins[0] or
                 tooth_slices[0][1].start < margins[1] or
@@ -242,7 +242,7 @@ class NNUNetSpatialIntensityAugmentations(BaseTransform):
 
             # return result without transformation if tooth mask is outside image
             slices = ndimage.find_objects(seg[0, 0])
-            if (
+            if self.margin > 0 and (
                 not slices or
                 slices[0][0].start < margins[0] or
                 slices[0][1].start < margins[1] or
